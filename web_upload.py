@@ -477,8 +477,8 @@ input:focus {{ border-color:var(--accent); outline:none; }}
     {logos_gallery}
     <div class="upload-section">
       <form method="POST" action="/admin/upload/logo" enctype="multipart/form-data">
-        <input type="file" name="image" accept="image/*" required>
-        <button type="submit" class="btn btn-sm btn-secondary">Logo hochladen</button>
+        <input type="file" name="image" accept="image/*" multiple required>
+        <button type="submit" class="btn btn-sm btn-secondary">Logo(s) hochladen</button>
       </form>
     </div>
   </div>
@@ -489,8 +489,8 @@ input:focus {{ border-color:var(--accent); outline:none; }}
     {pictures_gallery}
     <div class="upload-section">
       <form method="POST" action="/admin/upload/pictures" enctype="multipart/form-data">
-        <input type="file" name="image" accept="image/*" required>
-        <button type="submit" class="btn btn-sm btn-secondary">Bild hochladen</button>
+        <input type="file" name="image" accept="image/*" multiple required>
+        <button type="submit" class="btn btn-sm btn-secondary">Bild(er) hochladen</button>
       </form>
     </div>
   </div>
@@ -955,27 +955,40 @@ def create_app(config_path: str | None = None) -> Flask:
     def admin_upload(folder):
         if folder not in ("logo", "pictures"):
             return redirect(url_for("admin_dashboard", msg="Ungueltiger Ordner.", type="error"))
-        if "image" not in request.files:
+        files = request.files.getlist("image")
+        files = [f for f in files if f.filename]
+        if not files:
             return redirect(url_for("admin_dashboard", msg="Keine Datei ausgewaehlt.", type="error"))
-        file = request.files["image"]
-        if file.filename == "" or not allowed_file(file.filename):
-            return redirect(url_for("admin_dashboard", msg="Ungueltige Datei.", type="error"))
         if not check_free_space():
             return redirect(url_for("admin_dashboard", msg="Nicht genug Speicherplatz!", type="error"))
-        filename = make_timestamped_name(secure_filename(file.filename))
-        dest = os.path.join(folder_map[folder], filename)
-        file.save(dest)
+        saved = []
+        skipped = []
         client_ip = request.remote_addr
-        log.info("Admin-Upload: %s -> %s/ von IP %s", filename, folder, client_ip)
         max_log = reload_cfg().getint("logging", "upload_log_max", fallback=UPLOAD_LOG_MAX_DEFAULT)
-        log_upload_entry(upload_log_file, filename, folder, client_ip, max_log)
-        # Trigger slideshow rescan for logo/pictures uploads
+        for file in files:
+            if not allowed_file(file.filename):
+                skipped.append(file.filename)
+                continue
+            filename = make_timestamped_name(secure_filename(file.filename))
+            dest = os.path.join(folder_map[folder], filename)
+            file.save(dest)
+            log.info("Admin-Upload: %s -> %s/ von IP %s", filename, folder, client_ip)
+            log_upload_entry(upload_log_file, filename, folder, client_ip, max_log)
+            saved.append(filename)
+        # Trigger slideshow rescan
         try:
             with open(RESCAN_TRIGGER, "w") as f:
                 f.write("rescan")
         except OSError:
             pass
-        return redirect(url_for("admin_dashboard", msg=f"'{filename}' hochgeladen in {folder}/.", type="success"))
+        if not saved and skipped:
+            return redirect(url_for("admin_dashboard", msg="Nicht unterstuetztes Dateiformat.", type="error"))
+        msg_parts = []
+        if saved:
+            msg_parts.append(f"{len(saved)} Datei(en) hochgeladen in {folder}/.")
+        if skipped:
+            msg_parts.append(f"{len(skipped)} uebersprungen (Format).")
+        return redirect(url_for("admin_dashboard", msg=" ".join(msg_parts), type="success" if saved else "error"))
 
     @app.route("/admin/delete/<folder>/<filename>", methods=["POST"])
     @require_admin
