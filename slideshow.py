@@ -7,6 +7,7 @@ Runs without desktop environment using the framebuffer.
 """
 
 import configparser
+import glob
 import logging
 import os
 import random
@@ -81,6 +82,29 @@ def collect_images(folder: str, recursive: bool = True) -> list[str]:
 # Display helpers
 # ---------------------------------------------------------------------------
 
+def find_hdmi_card() -> str | None:
+    """Find the DRM card with a connected HDMI output.
+
+    On Raspberry Pi with vc4-kms-v3d, there are often two cards:
+    card0 = v3d (GPU only, no display) and card1 = vc4 (HDMI).
+    SDL2 defaults to card0, which may be the wrong one.
+    """
+    for status_file in sorted(glob.glob("/sys/class/drm/card*-HDMI-*/status")):
+        try:
+            with open(status_file) as f:
+                if f.read().strip() == "connected":
+                    # Extract card number: /sys/class/drm/card1-HDMI-A-1/status -> 1
+                    card_name = os.path.basename(os.path.dirname(status_file))
+                    card_num = card_name.split("-")[0].replace("card", "")
+                    dev = f"/dev/dri/card{card_num}"
+                    if os.path.exists(dev):
+                        log.info("HDMI erkannt: %s (%s)", dev, card_name)
+                        return dev
+        except OSError:
+            continue
+    return None
+
+
 def init_display() -> pygame.Surface:
     """Initialise pygame for framebuffer (no X11) or fallback to windowed.
 
@@ -90,6 +114,11 @@ def init_display() -> pygame.Surface:
     os.environ.setdefault("SDL_NOMOUSE", "1")
     # Ensure fbcon uses the correct framebuffer device
     os.environ.setdefault("SDL_FBDEV", "/dev/fb0")
+
+    # Auto-detect the correct DRM card with HDMI output
+    hdmi_card = find_hdmi_card()
+    if hdmi_card:
+        os.environ["SDL_VIDEO_KMSDRM_DRMDEV"] = hdmi_card
 
     # Try display drivers in order of preference
     drivers = ["kmsdrm", "fbcon", "directfb", "svgalib"]
