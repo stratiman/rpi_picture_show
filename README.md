@@ -380,6 +380,11 @@ Optionale Git-Push-Argumente werden weitergeleitet:
 
 ## Versionshistorie
 
+### v1.4.0
+- **Pictures immer random**: Bilder werden nach jedem Rescan neu gemischt
+- **Bilder pro Logo**: Konfigurierbarer Modus `pictures_per_logo` (1 = Logo-Bild-Logo-Bild, 3 = Logo-Bild-Bild-Bild-Logo, 0 = nur Bilder)
+- **Client-seitige Groessenpruefung**: Gesamtgroesse wird vor Upload angezeigt, Button blockiert bei Ueberschreitung
+
 ### v1.3.0
 - **Multi-Upload im Admin-Panel**: Mehrere Logos/Bilder gleichzeitig hochladen
 - **Duplikat-Erkennung**: Bereits vorhandene Bilder werden beim Upload uebersprungen (User + Admin)
