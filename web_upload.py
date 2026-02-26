@@ -694,7 +694,8 @@ def create_app(config_path: str | None = None) -> Flask:
 
     app = Flask(__name__)
     app.secret_key = os.urandom(24)
-    app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB
+    max_upload_mb = cfg.getint("web", "max_upload_mb", fallback=256)
+    app.config["MAX_CONTENT_LENGTH"] = max_upload_mb * 1024 * 1024
 
     # ---------------------------------------------------------------
     # Helpers
