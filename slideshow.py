@@ -83,17 +83,11 @@ def collect_images(folder: str, recursive: bool = True) -> list[str]:
 # ---------------------------------------------------------------------------
 
 def find_hdmi_card() -> str | None:
-    """Find the DRM card with a connected HDMI output.
-
-    On Raspberry Pi with vc4-kms-v3d, there are often two cards:
-    card0 = v3d (GPU only, no display) and card1 = vc4 (HDMI).
-    SDL2 defaults to card0, which may be the wrong one.
-    """
+    """Find the DRM card with a connected HDMI output."""
     for status_file in sorted(glob.glob("/sys/class/drm/card*-HDMI-*/status")):
         try:
             with open(status_file) as f:
                 if f.read().strip() == "connected":
-                    # Extract card number: /sys/class/drm/card1-HDMI-A-1/status -> 1
                     card_name = os.path.basename(os.path.dirname(status_file))
                     card_num = card_name.split("-")[0].replace("card", "")
                     dev = f"/dev/dri/card{card_num}"
@@ -106,22 +100,19 @@ def find_hdmi_card() -> str | None:
 
 
 def init_display() -> pygame.Surface:
-    """Initialise pygame for framebuffer (no X11) or fallback to windowed.
-
-    NOTE: fbcon must be unbound BEFORE this runs (done by systemd service
-    via 'echo 0 > /sys/class/vtconsole/vtcon1/bind' as root).
-    """
+    """Initialise pygame for framebuffer (no X11) or fallback to windowed."""
     os.environ.setdefault("SDL_NOMOUSE", "1")
-    # Ensure fbcon uses the correct framebuffer device
+    # Point fbcon driver to the correct framebuffer device
     os.environ.setdefault("SDL_FBDEV", "/dev/fb0")
 
-    # Auto-detect the correct DRM card with HDMI output
+    # Auto-detect HDMI card for kmsdrm
     hdmi_card = find_hdmi_card()
     if hdmi_card:
         os.environ["SDL_VIDEO_KMSDRM_DRMDEV"] = hdmi_card
 
-    # Try display drivers in order of preference
-    drivers = ["kmsdrm", "fbcon", "directfb", "svgalib"]
+    # fbcon first: direct framebuffer write, most reliable on Pi
+    # kmsdrm as fallback: uses DRM/KMS (needs DRM master)
+    drivers = ["fbcon", "kmsdrm", "directfb", "svgalib"]
 
     display_initialized = False
     for driver in drivers:

@@ -6,18 +6,14 @@ After=multi-user.target
 Type=simple
 User=pi
 Group=pi
-# Konsole freigeben: fbcon vom DRM-Geraet trennen, damit kmsdrm den HDMI-Ausgang nutzen kann
-ExecStartPre=-/bin/chvt 2
-ExecStartPre=-/bin/sh -c 'echo 0 > /sys/class/vtconsole/vtcon1/bind'
+# Konsole ausblenden (Cursor + Text verstecken)
+ExecStartPre=-/bin/sh -c 'setterm --cursor off --blank force --tty /dev/tty1 2>/dev/null'
 ExecStart=/usr/bin/python3 /home/pi/rpi-picture-show/slideshow.py
-# Bei Beendigung: fbcon wieder anbinden und Konsole wiederherstellen
-ExecStopPost=-/bin/sh -c 'echo 1 > /sys/class/vtconsole/vtcon1/bind'
-ExecStopPost=-/bin/chvt 1
+# Bei Beendigung: Konsole wiederherstellen
+ExecStopPost=-/bin/sh -c 'setterm --cursor on --blank poke --tty /dev/tty1 2>/dev/null'
 WorkingDirectory=/home/pi/rpi-picture-show
 Restart=on-failure
 RestartSec=5
-TTYPath=/dev/tty2
-StandardInput=tty-force
 StandardOutput=journal
 StandardError=journal
 # Zugriff auf Framebuffer/DRM
