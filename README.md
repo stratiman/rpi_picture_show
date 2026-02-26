@@ -377,6 +377,11 @@ Optionale Git-Push-Argumente werden weitergeleitet:
 
 ## Versionshistorie
 
+### v1.1.2
+- **Config aus Git-Tracking entfernt**: `config.ini` wird nicht mehr versioniert - Updates per `git pull` laufen ohne Konflikte
+- **config.default.ini**: Vorlage fuer die Konfiguration im Repository, wird bei Erstinstallation automatisch zu `config.ini` kopiert
+- **Vereinfachtes Update**: Kein Backup/Restore der config.ini mehr noetig, da sie per `.gitignore` ignoriert wird
+
 ### v1.1.1
 - **Multi-Upload**: Mehrere Bilder gleichzeitig hochladen per Dateiauswahl oder Drag & Drop
 - **Vorschau-Grid**: Thumbnails aller ausgewaehlten Bilder vor dem Upload

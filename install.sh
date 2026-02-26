@@ -28,20 +28,9 @@ if [ "$IS_UPDATE" = true ]; then
     echo " RPI Picture Show - Update"
     echo "========================================"
 
-    # --- 1. config.ini sichern ---
+    # --- 1. Git Pull ---
     echo ""
-    echo "[1/4] Sichere Konfiguration ..."
-    CONFIG_BACKUP=""
-    if [ -f "${INSTALL_DIR}/config.ini" ]; then
-        CONFIG_BACKUP=$(cat "${INSTALL_DIR}/config.ini")
-        echo "  -> config.ini gesichert"
-    fi
-
-    # --- 2. Git Pull ---
-    echo ""
-    echo "[2/4] Aktualisiere aus Repository ..."
-    # Lokale Aenderungen an versionierten Dateien verwerfen (config.ini etc.)
-    git -C "${INSTALL_DIR}" checkout -- . 2>/dev/null || true
+    echo "[1/2] Aktualisiere aus Repository ..."
     if git -C "${INSTALL_DIR}" pull --ff-only; then
         echo "  -> Update erfolgreich"
     else
@@ -51,17 +40,15 @@ if [ "$IS_UPDATE" = true ]; then
         echo "  -> Reset auf neueste Version durchgefuehrt"
     fi
 
-    # --- 3. config.ini wiederherstellen ---
-    echo ""
-    echo "[3/4] Stelle Konfiguration wieder her ..."
-    if [ -n "${CONFIG_BACKUP}" ]; then
-        echo "${CONFIG_BACKUP}" > "${INSTALL_DIR}/config.ini"
-        echo "  -> config.ini wiederhergestellt"
+    # config.ini aus config.default.ini erstellen falls nicht vorhanden
+    if [ ! -f "${INSTALL_DIR}/config.ini" ]; then
+        cp "${INSTALL_DIR}/config.default.ini" "${INSTALL_DIR}/config.ini"
+        echo "  -> config.ini aus Vorlage erstellt"
     fi
 
-    # --- 4. Services aktualisieren und neu starten ---
+    # --- 2. Services aktualisieren und neu starten ---
     echo ""
-    echo "[4/4] Aktualisiere Services ..."
+    echo "[2/2] Aktualisiere Services ..."
     sudo cp "${INSTALL_DIR}/rpi-slideshow.service" /etc/systemd/system/
     sudo cp "${INSTALL_DIR}/rpi-slideshow-web.service" /etc/systemd/system/
     sudo systemctl daemon-reload
@@ -106,10 +93,10 @@ else
         sudo mkdir -p "$(dirname "${INSTALL_DIR}")"
         git clone "${REPO_URL}" "${INSTALL_DIR}"
     fi
-    # config.ini nur kopieren wenn noch nicht vorhanden (User-Einstellungen erhalten)
+    # config.ini aus Vorlage erstellen wenn noch nicht vorhanden
     if [ ! -f "${INSTALL_DIR}/config.ini" ]; then
         echo "  -> Erstelle Standard-Konfiguration"
-        cp "${SCRIPT_DIR}/config.ini" "${INSTALL_DIR}/config.ini"
+        cp "${INSTALL_DIR}/config.default.ini" "${INSTALL_DIR}/config.ini"
     fi
     sudo chown -R pi:pi "${INSTALL_DIR}"
     sudo chmod +x "${INSTALL_DIR}/slideshow.py"

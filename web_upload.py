@@ -1104,39 +1104,17 @@ def create_app(config_path: str | None = None) -> Flask:
                 json.dumps({"error": "Kein Git-Repository gefunden. Bitte mit 'git clone' installieren (siehe README)."}),
                 mimetype="application/json",
             )
-        config_path_local = os.path.join(app_dir, "config.ini")
         try:
-            # config.ini sichern (lokale Einstellungen erhalten)
-            config_backup = None
-            if os.path.isfile(config_path_local):
-                with open(config_path_local) as f:
-                    config_backup = f.read()
-
-            # Lokale Aenderungen an config.ini verwerfen, damit pull nicht fehlschlaegt
-            subprocess.run(
-                ["git", "-C", app_dir, "checkout", "--", "config.ini"],
-                capture_output=True, text=True, timeout=10,
-            )
-
-            # git pull
+            # git pull (config.ini ist gitignored, kein Konflikt moeglich)
             proc = subprocess.run(
                 ["git", "-C", app_dir, "pull", "origin", "master"],
                 capture_output=True, text=True, timeout=60,
             )
             if proc.returncode != 0:
-                # config.ini wiederherstellen bei Fehler
-                if config_backup is not None:
-                    with open(config_path_local, "w") as f:
-                        f.write(config_backup)
                 return Response(
                     json.dumps({"error": "git pull fehlgeschlagen: " + proc.stderr.strip()}),
                     mimetype="application/json",
                 )
-
-            # config.ini wiederherstellen
-            if config_backup is not None:
-                with open(config_path_local, "w") as f:
-                    f.write(config_backup)
 
             new_version = get_version()
             log.info("Update auf v%s durchgefuehrt", new_version)
