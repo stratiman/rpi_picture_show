@@ -53,6 +53,15 @@ mkdir -p "${SLIDESHOW_DIR}/logo"
 mkdir -p "${SLIDESHOW_DIR}/pictures"
 mkdir -p "${SLIDESHOW_DIR}/uploaded"
 mkdir -p "${SLIDESHOW_DIR}/trash"
+# Platzhalterbilder kopieren falls Ordner leer sind
+if [ -z "$(ls -A "${SLIDESHOW_DIR}/logo/" 2>/dev/null)" ] && [ -d "${INSTALL_DIR}/logo" ]; then
+    cp "${INSTALL_DIR}"/logo/*.{jpg,jpeg,png,bmp,gif} "${SLIDESHOW_DIR}/logo/" 2>/dev/null || true
+    echo "  -> Platzhalterbilder nach ${SLIDESHOW_DIR}/logo/ kopiert"
+fi
+if [ -z "$(ls -A "${SLIDESHOW_DIR}/pictures/" 2>/dev/null)" ] && [ -d "${INSTALL_DIR}/pictures" ]; then
+    cp "${INSTALL_DIR}"/pictures/*.{jpg,jpeg,png,bmp,gif} "${SLIDESHOW_DIR}/pictures/" 2>/dev/null || true
+    echo "  -> Platzhalterbilder nach ${SLIDESHOW_DIR}/pictures/ kopiert"
+fi
 echo "  -> ${SLIDESHOW_DIR}/logo/"
 echo "  -> ${SLIDESHOW_DIR}/pictures/"
 echo "  -> ${SLIDESHOW_DIR}/uploaded/"

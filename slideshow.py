@@ -83,9 +83,12 @@ def collect_images(folder: str, recursive: bool = True) -> list[str]:
 
 def init_display() -> pygame.Surface:
     """Initialise pygame for framebuffer (no X11) or fallback to windowed."""
-    # Try display drivers in order of preference (kmsdrm first for Trixie/Bookworm)
-    drivers = ["kmsdrm", "fbcon", "directfb", "svgalib"]
     os.environ.setdefault("SDL_NOMOUSE", "1")
+    # Ensure fbcon uses the correct framebuffer device
+    os.environ.setdefault("SDL_FBDEV", "/dev/fb0")
+
+    # Try display drivers in order of preference
+    drivers = ["kmsdrm", "fbcon", "directfb", "svgalib"]
 
     display_initialized = False
     for driver in drivers:
@@ -95,7 +98,8 @@ def init_display() -> pygame.Surface:
             display_initialized = True
             log.info("Video-Treiber: %s", driver)
             break
-        except pygame.error:
+        except pygame.error as e:
+            log.debug("Treiber %s fehlgeschlagen: %s", driver, e)
             continue
 
     if not display_initialized:
@@ -109,8 +113,19 @@ def init_display() -> pygame.Surface:
 
     info = pygame.display.Info()
     screen_w, screen_h = info.current_w, info.current_h
-    screen = pygame.display.set_mode((screen_w, screen_h), pygame.FULLSCREEN)
+    # Use (0,0) to let SDL choose optimal resolution when values look invalid
+    if screen_w <= 0 or screen_h <= 0:
+        screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+        screen_w, screen_h = screen.get_size()
+    else:
+        screen = pygame.display.set_mode((screen_w, screen_h), pygame.FULLSCREEN)
     log.info("Aufloesung: %dx%d", screen_w, screen_h)
+
+    # Test: fill screen briefly with white to verify display output
+    screen.fill((255, 255, 255))
+    pygame.display.flip()
+    log.info("Display-Test: weisser Bildschirm angezeigt")
+
     return screen
 
 
