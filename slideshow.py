@@ -7,8 +7,8 @@ Runs without desktop environment using the framebuffer.
 """
 
 import configparser
-import glob
 import logging
+import mmap
 import os
 import random
 import shutil
@@ -82,37 +82,51 @@ def collect_images(folder: str, recursive: bool = True) -> list[str]:
 # Display helpers
 # ---------------------------------------------------------------------------
 
-def find_hdmi_card() -> str | None:
-    """Find the DRM card with a connected HDMI output."""
-    for status_file in sorted(glob.glob("/sys/class/drm/card*-HDMI-*/status")):
-        try:
-            with open(status_file) as f:
-                if f.read().strip() == "connected":
-                    card_name = os.path.basename(os.path.dirname(status_file))
-                    card_num = card_name.split("-")[0].replace("card", "")
-                    dev = f"/dev/dri/card{card_num}"
-                    if os.path.exists(dev):
-                        log.info("HDMI erkannt: %s (%s)", dev, card_name)
-                        return dev
-        except OSError:
-            continue
-    return None
+def setup_fb_mirror(screen_w: int, screen_h: int):
+    """Open /dev/fb0 and monkey-patch pygame.display.flip to mirror frames.
+
+    SDL 2.28+ removed the fbcon driver, and kmsdrm on Pi 3 with Trixie
+    does not render to the HDMI output.  As a workaround we let kmsdrm
+    handle the pygame display surface (off-screen) and copy every frame
+    to /dev/fb0 via mmap so it actually appears on the physical screen.
+    """
+    try:
+        with open("/sys/class/graphics/fb0/bits_per_pixel") as f:
+            bpp = int(f.read().strip())
+        with open("/sys/class/graphics/fb0/stride") as f:
+            stride = int(f.read().strip())
+        with open("/sys/class/graphics/fb0/virtual_size") as f:
+            fb_w, fb_h = map(int, f.read().strip().split(","))
+
+        fb_file = open("/dev/fb0", "r+b")
+        fbmap = mmap.mmap(fb_file.fileno(), stride * fb_h)
+
+        # Pre-create a conversion surface matching the framebuffer depth
+        conv = pygame.Surface((fb_w, fb_h), depth=bpp)
+
+        _original_flip = pygame.display.flip
+
+        def fb_flip():
+            _original_flip()
+            screen = pygame.display.get_surface()
+            if screen is None:
+                return
+            conv.blit(screen, (0, 0))
+            fbmap.seek(0)
+            fbmap.write(conv.get_buffer().raw)
+
+        pygame.display.flip = fb_flip
+        log.info("Framebuffer-Mirror aktiv: /dev/fb0 (%dx%d, %dbpp)", fb_w, fb_h, bpp)
+    except Exception as exc:
+        log.debug("Framebuffer-Mirror nicht verfuegbar: %s", exc)
 
 
 def init_display() -> pygame.Surface:
-    """Initialise pygame for framebuffer (no X11) or fallback to windowed."""
+    """Initialise pygame display and set up framebuffer mirror if needed."""
     os.environ.setdefault("SDL_NOMOUSE", "1")
-    # Point fbcon driver to the correct framebuffer device
-    os.environ.setdefault("SDL_FBDEV", "/dev/fb0")
 
-    # Auto-detect HDMI card for kmsdrm
-    hdmi_card = find_hdmi_card()
-    if hdmi_card:
-        os.environ["SDL_VIDEO_KMSDRM_DRMDEV"] = hdmi_card
-
-    # fbcon first: direct framebuffer write, most reliable on Pi
-    # kmsdrm as fallback: uses DRM/KMS (needs DRM master)
-    drivers = ["fbcon", "kmsdrm", "directfb", "svgalib"]
+    # Try display drivers in order of preference
+    drivers = ["kmsdrm", "directfb", "svgalib"]
 
     display_initialized = False
     for driver in drivers:
@@ -137,13 +151,16 @@ def init_display() -> pygame.Surface:
 
     info = pygame.display.Info()
     screen_w, screen_h = info.current_w, info.current_h
-    # Use (0,0) to let SDL choose optimal resolution when values look invalid
     if screen_w <= 0 or screen_h <= 0:
         screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
         screen_w, screen_h = screen.get_size()
     else:
         screen = pygame.display.set_mode((screen_w, screen_h), pygame.FULLSCREEN)
     log.info("Aufloesung: %dx%d", screen_w, screen_h)
+
+    # Mirror every pygame.display.flip() to /dev/fb0 (needed on Pi + Trixie
+    # where kmsdrm renders off-screen and the fbcon SDL driver is removed)
+    setup_fb_mirror(screen_w, screen_h)
 
     # Test: fill screen briefly with white to verify display output
     screen.fill((255, 255, 255))
