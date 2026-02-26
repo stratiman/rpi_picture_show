@@ -6,11 +6,12 @@ After=multi-user.target
 Type=simple
 User=pi
 Group=pi
-# Auf eigenes VT wechseln und Konsole ausblenden (kmsdrm/Trixie)
+# Konsole freigeben: fbcon vom DRM-Geraet trennen, damit kmsdrm den HDMI-Ausgang nutzen kann
 ExecStartPre=-/bin/chvt 2
-ExecStartPre=-/bin/sh -c 'setterm --cursor off --blank force --tty /dev/tty2 2>/dev/null'
+ExecStartPre=-/bin/sh -c 'echo 0 > /sys/class/vtconsole/vtcon1/bind'
 ExecStart=/usr/bin/python3 /home/pi/rpi-picture-show/slideshow.py
-# Bei Beendigung zurueck auf VT1
+# Bei Beendigung: fbcon wieder anbinden und Konsole wiederherstellen
+ExecStopPost=-/bin/sh -c 'echo 1 > /sys/class/vtconsole/vtcon1/bind'
 ExecStopPost=-/bin/chvt 1
 WorkingDirectory=/home/pi/rpi-picture-show
 Restart=on-failure
