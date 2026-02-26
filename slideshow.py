@@ -32,6 +32,7 @@ log = logging.getLogger("slideshow")
 # Constants
 # ---------------------------------------------------------------------------
 SUPPORTED_EXTENSIONS = (".jpg", ".jpeg", ".png", ".bmp", ".gif")
+RESCAN_TRIGGER = "/tmp/rpi-slideshow-rescan"
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -535,6 +536,17 @@ class Slideshow:
 
     # ------------------------------------------------------------------
 
+    def check_rescan_trigger(self) -> bool:
+        """Check if a rescan was requested (e.g. by web upload) and clear the trigger."""
+        if os.path.exists(RESCAN_TRIGGER):
+            try:
+                os.remove(RESCAN_TRIGGER)
+            except OSError:
+                pass
+            log.info("Rescan angefordert (Trigger-Datei erkannt)")
+            return True
+        return False
+
     def handle_events(self) -> bool:
         """Process pygame events. Return False to quit."""
         for event in pygame.event.get():
@@ -597,6 +609,8 @@ class Slideshow:
 
             logo_idx = 0
             pics_idx = 0
+            logo_cycled = False
+            pics_cycled = False
 
             while self.running:
                 # Show logo
@@ -605,7 +619,7 @@ class Slideshow:
                     logo_idx += 1
                     if logo_idx >= len(logos):
                         logo_idx = 0
-                        break  # Re-scan folders
+                        logo_cycled = True
 
                 if not self.running:
                     break
@@ -622,7 +636,13 @@ class Slideshow:
                     pics_idx += 1
                     if pics_idx >= len(pics):
                         pics_idx = 0
-                        break  # Re-scan folders
+                        pics_cycled = True
+
+                # Re-scan if triggered by web upload or after full cycle
+                if self.check_rescan_trigger():
+                    break
+                if (logo_cycled or not logos) and (pics_cycled or not pics):
+                    break
 
         pygame.quit()
         log.info("Slideshow beendet.")

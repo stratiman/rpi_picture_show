@@ -377,6 +377,11 @@ Optionale Git-Push-Argumente werden weitergeleitet:
 
 ## Versionshistorie
 
+### v1.1.1
+- **Multi-Upload**: Mehrere Bilder gleichzeitig hochladen per Dateiauswahl oder Drag & Drop
+- **Vorschau-Grid**: Thumbnails aller ausgewaehlten Bilder vor dem Upload
+- **Rescan-Trigger**: Slideshow erkennt neue Uploads sofort statt erst nach vollem Durchlauf
+
 ### v1.1.0
 - **Volle Trixie-Unterstuetzung**: Laeuft jetzt zuverlaessig auf Raspberry Pi OS Trixie (Debian 13) mit SDL 2.28+ und vc4-kms-v3d
 - **Direktes Framebuffer-Rendering**: Schreibt Bilder direkt nach `/dev/fb0` via mmap - umgeht kmsdrm-Probleme auf modernen Pi-Systemen vollstaendig

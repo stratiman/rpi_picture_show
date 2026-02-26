@@ -39,6 +39,7 @@ log = logging.getLogger("web_upload")
 # ---------------------------------------------------------------------------
 SUPPORTED_EXTENSIONS = (".jpg", ".jpeg", ".png", ".bmp", ".gif")
 ALLOWED_FOLDERS = ("logo", "pictures", "trash")
+RESCAN_TRIGGER = "/tmp/rpi-slideshow-rescan"
 
 # ---------------------------------------------------------------------------
 # Configuration helpers
@@ -177,8 +178,8 @@ input[type="file"] {{ display:none; }}
 .message {{ padding:12px 20px; border-radius:8px; margin-bottom:20px; font-size:1em; }}
 .message.success {{ background:var(--msg-ok-bg); color:var(--msg-ok-fg); border:1px solid var(--msg-ok-border); }}
 .message.error {{ background:var(--msg-err-bg); color:var(--msg-err-fg); border:1px solid var(--msg-err-border); }}
-.preview {{ margin:15px auto; max-width:100%; max-height:200px; display:none; }}
-.preview img {{ max-width:100%; max-height:200px; object-fit:contain; border-radius:8px; }}
+.preview {{ margin:15px auto; max-width:100%; display:none; }}
+.preview img {{ max-width:120px; max-height:120px; object-fit:contain; border-radius:6px; }}
 .admin-link {{ margin-top:30px; }}
 .admin-link a {{ color:var(--link-muted); font-size:0.85em; text-decoration:none; }}
 .admin-link a:hover {{ color:var(--accent); }}
@@ -194,10 +195,10 @@ input[type="file"] {{ display:none; }}
   {message_html}
   <form method="POST" action="/upload" enctype="multipart/form-data" id="uploadForm">
     <div class="upload-area" id="dropZone">
-      <label class="btn btn-select" for="fileInput">Bild auswaehlen</label>
-      <input type="file" name="image" id="fileInput" accept="image/*">
-      <p class="file-name" id="fileName">Oder Bild hierher ziehen</p>
-      <div class="preview" id="preview"><img id="previewImg" src="" alt="Vorschau"></div>
+      <label class="btn btn-select" for="fileInput">Bilder auswaehlen</label>
+      <input type="file" name="image" id="fileInput" accept="image/*" multiple>
+      <p class="file-name" id="fileName">Oder Bilder hierher ziehen</p>
+      <div class="preview" id="preview"></div>
     </div>
     <button type="submit" class="btn" id="uploadBtn" disabled>Hochladen</button>
   </form>
@@ -214,15 +215,33 @@ input[type="file"] {{ display:none; }}
 }})();
 const fi=document.getElementById('fileInput'),fn=document.getElementById('fileName'),
   ub=document.getElementById('uploadBtn'),dz=document.getElementById('dropZone'),
-  pv=document.getElementById('preview'),pi=document.getElementById('previewImg');
-function hf(f){{if(f){{fn.textContent=f.name;ub.disabled=false;
-  if(f.type.startsWith('image/')){{const r=new FileReader();
-  r.onload=function(e){{pi.src=e.target.result;pv.style.display='block';}};r.readAsDataURL(f);}}}}}}
-fi.addEventListener('change',function(){{hf(this.files[0]);}});
+  pv=document.getElementById('preview');
+function showFiles(files){{
+  if(!files||!files.length)return;
+  const n=files.length;
+  fn.textContent=n===1?files[0].name:n+' Bilder ausgewaehlt';
+  ub.disabled=false;
+  pv.innerHTML='';pv.style.display='flex';pv.style.flexWrap='wrap';
+  pv.style.gap='8px';pv.style.justifyContent='center';
+  const max=8;
+  for(let i=0;i<Math.min(n,max);i++){{
+    if(files[i].type.startsWith('image/')){{
+      const img=document.createElement('img');
+      img.style.maxWidth='120px';img.style.maxHeight='120px';
+      img.style.objectFit='contain';img.style.borderRadius='6px';
+      const r=new FileReader();
+      r.onload=function(e){{img.src=e.target.result;}};
+      r.readAsDataURL(files[i]);pv.appendChild(img);
+    }}
+  }}
+  if(n>max){{const s=document.createElement('span');s.style.color='var(--muted)';
+    s.style.alignSelf='center';s.textContent='+'+(n-max)+' weitere';pv.appendChild(s);}}
+}}
+fi.addEventListener('change',function(){{showFiles(this.files);}});
 dz.addEventListener('dragover',function(e){{e.preventDefault();this.classList.add('dragover');}});
 dz.addEventListener('dragleave',function(){{this.classList.remove('dragover');}});
 dz.addEventListener('drop',function(e){{e.preventDefault();this.classList.remove('dragover');
-  if(e.dataTransfer.files.length){{fi.files=e.dataTransfer.files;hf(e.dataTransfer.files[0]);}}}});
+  if(e.dataTransfer.files.length){{fi.files=e.dataTransfer.files;showFiles(e.dataTransfer.files);}}}});
 </script>
 </body></html>"""
 
@@ -785,23 +804,34 @@ def create_app(config_path: str | None = None) -> Flask:
 
     @app.route("/upload", methods=["POST"])
     def upload():
-        if "image" not in request.files:
+        files = request.files.getlist("image")
+        files = [f for f in files if f.filename]
+        if not files:
             return redirect(url_for("index", msg="Keine Datei ausgewaehlt.", type="error"))
-        file = request.files["image"]
-        if file.filename == "":
-            return redirect(url_for("index", msg="Keine Datei ausgewaehlt.", type="error"))
-        if not allowed_file(file.filename):
-            return redirect(url_for("index", msg="Nicht unterstuetztes Dateiformat.", type="error"))
         if not check_free_space():
             return redirect(url_for("index", msg="Nicht genug Speicherplatz!", type="error"))
-        filename = make_timestamped_name(secure_filename(file.filename))
-        dest = os.path.join(folder_map["uploaded"], filename)
-        file.save(dest)
+        saved = []
+        skipped = []
         client_ip = request.remote_addr
-        log.info("Upload: %s von IP %s", filename, client_ip)
         max_log = reload_cfg().getint("logging", "upload_log_max", fallback=UPLOAD_LOG_MAX_DEFAULT)
-        log_upload_entry(upload_log_file, filename, "uploaded", client_ip, max_log)
-        return redirect(url_for("index", msg=f"Bild '{filename}' erfolgreich hochgeladen!", type="success"))
+        for file in files:
+            if not allowed_file(file.filename):
+                skipped.append(file.filename)
+                continue
+            filename = make_timestamped_name(secure_filename(file.filename))
+            dest = os.path.join(folder_map["uploaded"], filename)
+            file.save(dest)
+            log.info("Upload: %s von IP %s", filename, client_ip)
+            log_upload_entry(upload_log_file, filename, "uploaded", client_ip, max_log)
+            saved.append(filename)
+        if not saved and skipped:
+            return redirect(url_for("index", msg="Nicht unterstuetztes Dateiformat.", type="error"))
+        msg_parts = []
+        if saved:
+            msg_parts.append(f"{len(saved)} Bild(er) erfolgreich hochgeladen!")
+        if skipped:
+            msg_parts.append(f"{len(skipped)} uebersprungen (Format).")
+        return redirect(url_for("index", msg=" ".join(msg_parts), type="success" if saved else "error"))
 
     # ---------------------------------------------------------------
     # Auth routes
@@ -939,6 +969,12 @@ def create_app(config_path: str | None = None) -> Flask:
         log.info("Admin-Upload: %s -> %s/ von IP %s", filename, folder, client_ip)
         max_log = reload_cfg().getint("logging", "upload_log_max", fallback=UPLOAD_LOG_MAX_DEFAULT)
         log_upload_entry(upload_log_file, filename, folder, client_ip, max_log)
+        # Trigger slideshow rescan for logo/pictures uploads
+        try:
+            with open(RESCAN_TRIGGER, "w") as f:
+                f.write("rescan")
+        except OSError:
+            pass
         return redirect(url_for("admin_dashboard", msg=f"'{filename}' hochgeladen in {folder}/.", type="success"))
 
     @app.route("/admin/delete/<folder>/<filename>", methods=["POST"])
@@ -951,6 +987,12 @@ def create_app(config_path: str | None = None) -> Flask:
         if os.path.isfile(filepath):
             os.remove(filepath)
             log.info("Admin-Loeschung: %s/%s", folder, filename)
+            if folder in ("logo", "pictures"):
+                try:
+                    with open(RESCAN_TRIGGER, "w") as f:
+                        f.write("rescan")
+                except OSError:
+                    pass
             return redirect(url_for("admin_dashboard", msg=f"'{filename}' geloescht.", type="success"))
         return redirect(url_for("admin_dashboard", msg="Datei nicht gefunden.", type="error"))
 
