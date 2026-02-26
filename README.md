@@ -13,11 +13,14 @@ Ein einfaches Webinterface ermoeglicht das Hochladen von Bildern per Browser.
 - **Automatischer Papierkorb**: Angezeigte Uploads werden in den Trash verschoben
 - **Papierkorb-Cleanup**: Alte Dateien werden nach konfigurierbarer Frist geloescht
 - **Web-Upload**: Einfaches Webinterface zum Hochladen von Bildern per Browser/Handy
+- **Dark/Light Mode**: Theme-Umschaltung per Button auf allen Seiten (wird im Browser gespeichert)
+- **Upload-Log**: Alle Uploads werden mit Zeitpunkt, Dateiname, Ordner und IP-Adresse protokolliert
 - Konfigurierbare Uebergangseffekte (Fade, Slide, kein Effekt)
 - Automatischer Start beim Booten via systemd
 - Laeuft ohne Desktop (X11/Wayland) direkt ueber KMS/DRM bzw. Framebuffer
 - Rekursive Unterordner-Unterstuetzung
 - Optionales Mischen der Bildreihenfolge
+- **Versionierung**: Versionsnummer im Webinterface sichtbar, Auto-Inkrement per release.sh
 
 ## Voraussetzungen
 
@@ -72,7 +75,7 @@ sudo reboot
 Nach dem Start ist das Upload-Interface erreichbar unter:
 
 ```
-http://<PI-IP-ADRESSE>:8080
+http://<PI-IP-ADRESSE>
 ```
 
 - Zeigt ein Logo aus dem Logo-Ordner an
@@ -80,6 +83,7 @@ http://<PI-IP-ADRESSE>:8080
 - Drag & Drop oder Datei auswaehlen
 - Bildvorschau vor dem Upload
 - Funktioniert auch auf dem Handy
+- Dark/Light Mode umschaltbar (wird im Browser gespeichert)
 
 Hochgeladene Bilder landen im `uploaded/` Ordner und werden beim naechsten Bildwechsel
 bevorzugt angezeigt. Nach der Anzeige werden sie automatisch in den Papierkorb verschoben.
@@ -89,7 +93,7 @@ bevorzugt angezeigt. Nach der Anzeige werden sie automatisch in den Papierkorb v
 Das Admin-Panel ist passwortgeschuetzt erreichbar unter:
 
 ```
-http://<PI-IP-ADRESSE>:8080/admin
+http://<PI-IP-ADRESSE>/admin
 ```
 
 **Standard-Passwort: `admin`** (bitte nach der Installation aendern!)
@@ -100,6 +104,7 @@ http://<PI-IP-ADRESSE>:8080/admin
 - **Logos verwalten**: Logo-Bilder hochladen und loeschen
 - **Bilder verwalten**: Picture-Bilder hochladen und loeschen
 - **Papierkorb**: Einzelne oder alle Bilder im Papierkorb loeschen
+- **Upload-Log**: Tabelle aller Uploads mit Zeitpunkt, Dateiname, Ordner und IP-Adresse
 - **Passwort**: Admin-Passwort aendern
 
 Einstellungsaenderungen werden sofort in die `config.ini` geschrieben.
@@ -153,6 +158,9 @@ port = 80
 title = RPI Picture Show
 greeting = Willkommen! Laden Sie hier Ihre Bilder hoch.
 min_free_space_mb = 100
+
+[logging]
+upload_log_max = 200
 
 [admin]
 # Passwort-Hash (SHA-256) - Standard: admin
@@ -227,6 +235,12 @@ password_hash = 8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918
 | `greeting` | Begruessungstext auf der Upload-Seite |
 | `min_free_space_mb` | Mindest-Freispeicher in MB (Upload wird abgelehnt wenn weniger frei) |
 
+### Logging
+
+| Einstellung | Beschreibung |
+|---|---|
+| `upload_log_max` | Maximale Anzahl Upload-Log-Eintraege (aeltere werden verworfen) |
+
 ### Admin
 
 | Einstellung | Beschreibung |
@@ -276,9 +290,33 @@ JPG, JPEG, PNG, BMP, GIF (statisch)
 
 **Web-Upload nicht erreichbar:**
 - Status pruefen: `sudo systemctl status rpi-slideshow-web`
-- Port pruefen: `ss -tlnp | grep 8080`
+- Port pruefen: `ss -tlnp | grep 80`
 - Log pruefen: `journalctl -u rpi-slideshow-web -f`
 
 **Falscher Bildpfad:**
 - `config.ini` pruefen und Pfade anpassen
 - Services neustarten: `sudo systemctl restart rpi-slideshow rpi-slideshow-web`
+
+## Versionierung
+
+Die aktuelle Version steht in der Datei `VERSION` und wird im Webinterface (Footer) angezeigt.
+
+### Release erstellen
+
+Statt `git push` das Wrapper-Script verwenden:
+
+```bash
+./release.sh
+```
+
+Das Script:
+1. Liest die aktuelle Version aus `VERSION`
+2. Inkrementiert die Patch-Version (z.B. 1.0.0 -> 1.0.1)
+3. Schreibt die neue Version in `VERSION`
+4. Committet und pusht automatisch
+
+Optionale Git-Push-Argumente werden weitergeleitet:
+
+```bash
+./release.sh origin main
+```

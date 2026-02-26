@@ -46,6 +46,15 @@ def get_config_path() -> str:
     """Return the path to config.ini next to this script."""
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.ini")
 
+
+def get_version() -> str:
+    version_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "VERSION")
+    try:
+        with open(version_file) as f:
+            return f.read().strip()
+    except OSError:
+        return "?"
+
 # ---------------------------------------------------------------------------
 # Image collection
 # ---------------------------------------------------------------------------
@@ -505,6 +514,7 @@ class Slideshow:
     # ------------------------------------------------------------------
 
     def run(self):
+        log.info("RPI Picture Show v%s", get_version())
         signal.signal(signal.SIGTERM, lambda *_: setattr(self, "running", False))
         signal.signal(signal.SIGINT, lambda *_: setattr(self, "running", False))
 

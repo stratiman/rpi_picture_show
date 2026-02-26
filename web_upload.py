@@ -9,6 +9,7 @@ import configparser
 import datetime
 import functools
 import hashlib
+import json
 import logging
 import os
 import random
@@ -56,6 +57,15 @@ def get_config_path() -> str:
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.ini")
 
 
+def get_version() -> str:
+    version_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "VERSION")
+    try:
+        with open(version_file) as f:
+            return f.read().strip()
+    except OSError:
+        return "?"
+
+
 def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
@@ -73,50 +83,108 @@ def make_timestamped_name(filename: str) -> str:
     return f"{name}_{ts}{ext}"
 
 
+UPLOAD_LOG_MAX_DEFAULT = 200
+
+
+def get_upload_log_path(config_path: str) -> str:
+    return os.path.join(os.path.dirname(os.path.abspath(config_path)), "upload_log.json")
+
+
+def load_upload_log(log_path: str) -> list[dict]:
+    if not os.path.isfile(log_path):
+        return []
+    try:
+        with open(log_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, list):
+            return data
+    except (json.JSONDecodeError, OSError):
+        pass
+    return []
+
+
+def save_upload_log(log_path: str, entries: list[dict], max_entries: int = UPLOAD_LOG_MAX_DEFAULT):
+    entries = entries[-max_entries:]
+    with open(log_path, "w", encoding="utf-8") as f:
+        json.dump(entries, f, ensure_ascii=False, indent=1)
+
+
+def log_upload_entry(log_path: str, filename: str, folder: str, ip: str,
+                     max_entries: int = UPLOAD_LOG_MAX_DEFAULT):
+    entries = load_upload_log(log_path)
+    entries.append({
+        "time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "file": filename,
+        "folder": folder,
+        "ip": ip,
+    })
+    save_upload_log(log_path, entries, max_entries)
+
+
 # ---------------------------------------------------------------------------
 # Upload page HTML
 # ---------------------------------------------------------------------------
 
 HTML_UPLOAD = """<!DOCTYPE html>
-<html lang="de">
+<html lang="de" data-theme="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{title}</title>
 <style>
+:root[data-theme="dark"] {{
+  --bg: #1a1a2e; --fg: #eee; --muted: #aaa; --card: #16213e; --card-hover: #1a1a3e;
+  --card-active: #1f2b4d; --input-bg: #0f3460; --accent: #e94560; --accent-hover: #c73a52;
+  --accent-light: #ff6b81; --link-muted: #555;
+  --msg-ok-bg: #1b4332; --msg-ok-fg: #95d5b2; --msg-ok-border: #2d6a4f;
+  --msg-err-bg: #4a1525; --msg-err-fg: #f4978e; --msg-err-border: #7a2040;
+}}
+:root[data-theme="light"] {{
+  --bg: #f0f2f5; --fg: #222; --muted: #555; --card: #fff; --card-hover: #f5f5f5;
+  --card-active: #e8ecf0; --input-bg: #e8ecf0; --accent: #d63851; --accent-hover: #b82e44;
+  --accent-light: #e94560; --link-muted: #888;
+  --msg-ok-bg: #d4edda; --msg-ok-fg: #155724; --msg-ok-border: #c3e6cb;
+  --msg-err-bg: #f8d7da; --msg-err-fg: #721c24; --msg-err-border: #f5c6cb;
+}}
 * {{ margin:0; padding:0; box-sizing:border-box; }}
 body {{ font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-  background:#1a1a2e; color:#eee; min-height:100vh;
-  display:flex; flex-direction:column; align-items:center; padding:20px; }}
+  background:var(--bg); color:var(--fg); min-height:100vh;
+  display:flex; flex-direction:column; align-items:center; padding:20px; transition:background 0.3s,color 0.3s; }}
 .container {{ max-width:600px; width:100%; text-align:center; }}
+.theme-toggle {{ position:fixed; top:15px; right:15px; background:var(--card); border:1px solid var(--muted);
+  color:var(--fg); width:40px; height:40px; border-radius:50%; cursor:pointer; font-size:1.2em;
+  display:flex; align-items:center; justify-content:center; transition:background 0.3s; z-index:100; }}
+.theme-toggle:hover {{ background:var(--accent); color:#fff; border-color:var(--accent); }}
 .logo {{ margin:20px auto; max-width:280px; max-height:200px; }}
 .logo img {{ max-width:100%; max-height:200px; object-fit:contain; border-radius:8px; }}
-h1 {{ font-size:1.8em; margin-bottom:10px; color:#e94560; }}
-.greeting {{ font-size:1.1em; color:#aaa; margin-bottom:30px; line-height:1.5; }}
-.upload-area {{ background:#16213e; border:2px dashed #e94560; border-radius:12px;
+h1 {{ font-size:1.8em; margin-bottom:10px; color:var(--accent); }}
+.greeting {{ font-size:1.1em; color:var(--muted); margin-bottom:30px; line-height:1.5; }}
+.upload-area {{ background:var(--card); border:2px dashed var(--accent); border-radius:12px;
   padding:40px 20px; margin-bottom:20px; transition:background 0.2s; }}
-.upload-area:hover {{ background:#1a1a3e; }}
-.upload-area.dragover {{ background:#1f2b4d; border-color:#ff6b81; }}
+.upload-area:hover {{ background:var(--card-hover); }}
+.upload-area.dragover {{ background:var(--card-active); border-color:var(--accent-light); }}
 input[type="file"] {{ display:none; }}
-.btn {{ display:inline-block; background:#e94560; color:#fff; border:none;
+.btn {{ display:inline-block; background:var(--accent); color:#fff; border:none;
   padding:14px 32px; font-size:1.1em; border-radius:8px; cursor:pointer;
   transition:background 0.2s; text-decoration:none; }}
-.btn:hover {{ background:#c73a52; }}
+.btn:hover {{ background:var(--accent-hover); }}
 .btn:disabled {{ background:#555; cursor:not-allowed; }}
-.btn-select {{ background:#0f3460; margin-bottom:15px; }}
-.btn-select:hover {{ background:#1a4a7a; }}
-.file-name {{ margin:10px 0; font-size:0.95em; color:#aaa; min-height:1.4em; }}
+.btn-select {{ background:var(--input-bg); color:var(--fg); margin-bottom:15px; }}
+.btn-select:hover {{ background:var(--card-active); }}
+.file-name {{ margin:10px 0; font-size:0.95em; color:var(--muted); min-height:1.4em; }}
 .message {{ padding:12px 20px; border-radius:8px; margin-bottom:20px; font-size:1em; }}
-.message.success {{ background:#1b4332; color:#95d5b2; border:1px solid #2d6a4f; }}
-.message.error {{ background:#4a1525; color:#f4978e; border:1px solid #7a2040; }}
+.message.success {{ background:var(--msg-ok-bg); color:var(--msg-ok-fg); border:1px solid var(--msg-ok-border); }}
+.message.error {{ background:var(--msg-err-bg); color:var(--msg-err-fg); border:1px solid var(--msg-err-border); }}
 .preview {{ margin:15px auto; max-width:100%; max-height:200px; display:none; }}
 .preview img {{ max-width:100%; max-height:200px; object-fit:contain; border-radius:8px; }}
 .admin-link {{ margin-top:30px; }}
-.admin-link a {{ color:#555; font-size:0.85em; text-decoration:none; }}
-.admin-link a:hover {{ color:#e94560; }}
+.admin-link a {{ color:var(--link-muted); font-size:0.85em; text-decoration:none; }}
+.admin-link a:hover {{ color:var(--accent); }}
+.version {{ color:var(--link-muted); font-size:0.75em; margin-top:10px; }}
 </style>
 </head>
 <body>
+<button class="theme-toggle" id="themeToggle" title="Theme wechseln"></button>
 <div class="container">
   {logo_html}
   <h1>{title}</h1>
@@ -132,8 +200,16 @@ input[type="file"] {{ display:none; }}
     <button type="submit" class="btn" id="uploadBtn" disabled>Hochladen</button>
   </form>
   <div class="admin-link"><a href="/admin">Admin</a></div>
+  <div class="version">v{version}</div>
 </div>
 <script>
+(function(){{
+  const tb=document.getElementById('themeToggle'),root=document.documentElement;
+  function setTheme(t){{root.setAttribute('data-theme',t);localStorage.setItem('theme',t);
+    tb.textContent=t==='dark'?'\u2600\ufe0f':'\ud83c\udf19';}}
+  setTheme(localStorage.getItem('theme')||'dark');
+  tb.addEventListener('click',function(){{setTheme(root.getAttribute('data-theme')==='dark'?'light':'dark');}});
+}})();
 const fi=document.getElementById('fileInput'),fn=document.getElementById('fileName'),
   ub=document.getElementById('uploadBtn'),dz=document.getElementById('dropZone'),
   pv=document.getElementById('preview'),pi=document.getElementById('previewImg');
@@ -153,31 +229,46 @@ dz.addEventListener('drop',function(e){{e.preventDefault();this.classList.remove
 # ---------------------------------------------------------------------------
 
 HTML_LOGIN = """<!DOCTYPE html>
-<html lang="de">
+<html lang="de" data-theme="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Admin Login</title>
 <style>
+:root[data-theme="dark"] {{
+  --bg: #1a1a2e; --fg: #eee; --muted: #aaa; --card: #16213e;
+  --input-bg: #0f3460; --accent: #e94560; --accent-hover: #c73a52;
+  --msg-err-bg: #4a1525; --msg-err-fg: #f4978e; --msg-err-border: #7a2040;
+}}
+:root[data-theme="light"] {{
+  --bg: #f0f2f5; --fg: #222; --muted: #555; --card: #fff;
+  --input-bg: #e8ecf0; --accent: #d63851; --accent-hover: #b82e44;
+  --msg-err-bg: #f8d7da; --msg-err-fg: #721c24; --msg-err-border: #f5c6cb;
+}}
 * {{ margin:0; padding:0; box-sizing:border-box; }}
 body {{ font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-  background:#1a1a2e; color:#eee; min-height:100vh;
-  display:flex; justify-content:center; align-items:center; }}
-.login-box {{ background:#16213e; padding:40px; border-radius:12px; width:340px; text-align:center; }}
-h1 {{ font-size:1.5em; margin-bottom:20px; color:#e94560; }}
-input[type="password"] {{ width:100%; padding:12px; border:1px solid #333; border-radius:8px;
-  background:#0f3460; color:#eee; font-size:1em; margin-bottom:15px; outline:none; }}
-input[type="password"]:focus {{ border-color:#e94560; }}
-.btn {{ display:inline-block; background:#e94560; color:#fff; border:none; width:100%;
+  background:var(--bg); color:var(--fg); min-height:100vh;
+  display:flex; justify-content:center; align-items:center; transition:background 0.3s,color 0.3s; }}
+.theme-toggle {{ position:fixed; top:15px; right:15px; background:var(--card); border:1px solid var(--muted);
+  color:var(--fg); width:40px; height:40px; border-radius:50%; cursor:pointer; font-size:1.2em;
+  display:flex; align-items:center; justify-content:center; transition:background 0.3s; z-index:100; }}
+.theme-toggle:hover {{ background:var(--accent); color:#fff; border-color:var(--accent); }}
+.login-box {{ background:var(--card); padding:40px; border-radius:12px; width:340px; text-align:center; }}
+h1 {{ font-size:1.5em; margin-bottom:20px; color:var(--accent); }}
+input[type="password"] {{ width:100%; padding:12px; border:1px solid var(--muted); border-radius:8px;
+  background:var(--input-bg); color:var(--fg); font-size:1em; margin-bottom:15px; outline:none; }}
+input[type="password"]:focus {{ border-color:var(--accent); }}
+.btn {{ display:inline-block; background:var(--accent); color:#fff; border:none; width:100%;
   padding:14px; font-size:1.1em; border-radius:8px; cursor:pointer; }}
-.btn:hover {{ background:#c73a52; }}
+.btn:hover {{ background:var(--accent-hover); }}
 .message {{ padding:10px; border-radius:8px; margin-bottom:15px; font-size:0.9em; }}
-.message.error {{ background:#4a1525; color:#f4978e; border:1px solid #7a2040; }}
-a {{ color:#aaa; font-size:0.85em; text-decoration:none; display:block; margin-top:15px; }}
-a:hover {{ color:#e94560; }}
+.message.error {{ background:var(--msg-err-bg); color:var(--msg-err-fg); border:1px solid var(--msg-err-border); }}
+a {{ color:var(--muted); font-size:0.85em; text-decoration:none; display:block; margin-top:15px; }}
+a:hover {{ color:var(--accent); }}
 </style>
 </head>
 <body>
+<button class="theme-toggle" id="themeToggle" title="Theme wechseln"></button>
 <div class="login-box">
   <h1>Admin Login</h1>
   {message_html}
@@ -187,6 +278,15 @@ a:hover {{ color:#e94560; }}
   </form>
   <a href="/">Zurueck zur Startseite</a>
 </div>
+<script>
+(function(){{
+  const tb=document.getElementById('themeToggle'),root=document.documentElement;
+  function setTheme(t){{root.setAttribute('data-theme',t);localStorage.setItem('theme',t);
+    tb.textContent=t==='dark'?'\u2600\ufe0f':'\ud83c\udf19';}}
+  setTheme(localStorage.getItem('theme')||'dark');
+  tb.addEventListener('click',function(){{setTheme(root.getAttribute('data-theme')==='dark'?'light':'dark');}});
+}})();
+</script>
 </body></html>"""
 
 # ---------------------------------------------------------------------------
@@ -194,66 +294,99 @@ a:hover {{ color:#e94560; }}
 # ---------------------------------------------------------------------------
 
 HTML_ADMIN = """<!DOCTYPE html>
-<html lang="de">
+<html lang="de" data-theme="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Admin - RPI Picture Show</title>
 <style>
+:root[data-theme="dark"] {{
+  --bg: #1a1a2e; --fg: #eee; --muted: #aaa; --card: #16213e; --card-hover: #1a1a3e;
+  --card-active: #1f2b4d; --input-bg: #0f3460; --input-border: #333;
+  --accent: #e94560; --accent-hover: #c73a52; --link-muted: #555;
+  --msg-ok-bg: #1b4332; --msg-ok-fg: #95d5b2; --msg-ok-border: #2d6a4f;
+  --msg-err-bg: #4a1525; --msg-err-fg: #f4978e; --msg-err-border: #7a2040;
+  --danger: #7a2040; --danger-hover: #a02050;
+  --border: #333; --gallery-bg: #0f3460;
+  --table-head: #0f3460; --table-stripe: #1a2340; --table-border: #2a3555;
+}}
+:root[data-theme="light"] {{
+  --bg: #f0f2f5; --fg: #222; --muted: #555; --card: #fff; --card-hover: #f5f5f5;
+  --card-active: #e8ecf0; --input-bg: #e8ecf0; --input-border: #ccc;
+  --accent: #d63851; --accent-hover: #b82e44; --link-muted: #888;
+  --msg-ok-bg: #d4edda; --msg-ok-fg: #155724; --msg-ok-border: #c3e6cb;
+  --msg-err-bg: #f8d7da; --msg-err-fg: #721c24; --msg-err-border: #f5c6cb;
+  --danger: #c0392b; --danger-hover: #e74c3c;
+  --border: #ddd; --gallery-bg: #e8ecf0;
+  --table-head: #e8ecf0; --table-stripe: #f5f5f5; --table-border: #ddd;
+}}
 * {{ margin:0; padding:0; box-sizing:border-box; }}
 body {{ font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-  background:#1a1a2e; color:#eee; min-height:100vh; padding:20px; }}
+  background:var(--bg); color:var(--fg); min-height:100vh; padding:20px; transition:background 0.3s,color 0.3s; }}
 .container {{ max-width:900px; margin:0 auto; }}
+.theme-toggle {{ position:fixed; top:15px; right:15px; background:var(--card); border:1px solid var(--muted);
+  color:var(--fg); width:40px; height:40px; border-radius:50%; cursor:pointer; font-size:1.2em;
+  display:flex; align-items:center; justify-content:center; transition:background 0.3s; z-index:100; }}
+.theme-toggle:hover {{ background:var(--accent); color:#fff; border-color:var(--accent); }}
 .header {{ display:flex; justify-content:space-between; align-items:center; margin-bottom:25px; }}
-.header h1 {{ color:#e94560; font-size:1.6em; }}
-.header-links a {{ color:#aaa; text-decoration:none; margin-left:15px; font-size:0.9em; }}
-.header-links a:hover {{ color:#e94560; }}
+.header h1 {{ color:var(--accent); font-size:1.6em; }}
+.header-links a {{ color:var(--muted); text-decoration:none; margin-left:15px; font-size:0.9em; }}
+.header-links a:hover {{ color:var(--accent); }}
 .tabs {{ display:flex; gap:5px; margin-bottom:20px; flex-wrap:wrap; }}
-.tab {{ padding:10px 20px; background:#16213e; border:none; color:#aaa; cursor:pointer;
+.tab {{ padding:10px 20px; background:var(--card); border:none; color:var(--muted); cursor:pointer;
   border-radius:8px 8px 0 0; font-size:0.95em; }}
-.tab.active {{ background:#0f3460; color:#e94560; }}
-.tab:hover {{ color:#eee; }}
-.panel {{ display:none; background:#16213e; padding:25px; border-radius:0 8px 8px 8px; }}
+.tab.active {{ background:var(--input-bg); color:var(--accent); }}
+.tab:hover {{ color:var(--fg); }}
+.panel {{ display:none; background:var(--card); padding:25px; border-radius:0 8px 8px 8px; }}
 .panel.active {{ display:block; }}
 .message {{ padding:12px 20px; border-radius:8px; margin-bottom:20px; font-size:0.95em; }}
-.message.success {{ background:#1b4332; color:#95d5b2; border:1px solid #2d6a4f; }}
-.message.error {{ background:#4a1525; color:#f4978e; border:1px solid #7a2040; }}
-label {{ display:block; color:#aaa; font-size:0.9em; margin-bottom:4px; margin-top:12px; }}
+.message.success {{ background:var(--msg-ok-bg); color:var(--msg-ok-fg); border:1px solid var(--msg-ok-border); }}
+.message.error {{ background:var(--msg-err-bg); color:var(--msg-err-fg); border:1px solid var(--msg-err-border); }}
+label {{ display:block; color:var(--muted); font-size:0.9em; margin-bottom:4px; margin-top:12px; }}
 input[type="number"], input[type="password"] {{
-  width:100%; max-width:300px; padding:10px; border:1px solid #333; border-radius:6px;
-  background:#0f3460; color:#eee; font-size:1em; }}
-input[type="checkbox"] {{ width:auto; margin-right:8px; accent-color:#e94560; }}
+  width:100%; max-width:300px; padding:10px; border:1px solid var(--input-border); border-radius:6px;
+  background:var(--input-bg); color:var(--fg); font-size:1em; }}
+input[type="checkbox"] {{ width:auto; margin-right:8px; accent-color:var(--accent); }}
 .checkbox-row {{ display:flex; align-items:center; margin-top:12px; }}
 .checkbox-row label {{ margin:0; }}
-.section-title {{ color:#e94560; font-size:1.05em; margin-top:20px; margin-bottom:5px;
-  padding-top:15px; border-top:1px solid #333; }}
-input:focus {{ border-color:#e94560; outline:none; }}
-.btn {{ display:inline-block; background:#e94560; color:#fff; border:none;
+.section-title {{ color:var(--accent); font-size:1.05em; margin-top:20px; margin-bottom:5px;
+  padding-top:15px; border-top:1px solid var(--border); }}
+input:focus {{ border-color:var(--accent); outline:none; }}
+.btn {{ display:inline-block; background:var(--accent); color:#fff; border:none;
   padding:10px 24px; font-size:0.95em; border-radius:6px; cursor:pointer;
   margin-top:15px; text-decoration:none; }}
-.btn:hover {{ background:#c73a52; }}
+.btn:hover {{ background:var(--accent-hover); }}
 .btn-sm {{ padding:6px 14px; font-size:0.85em; margin-top:0; }}
-.btn-danger {{ background:#7a2040; }}
-.btn-danger:hover {{ background:#a02050; }}
-.btn-secondary {{ background:#0f3460; }}
-.btn-secondary:hover {{ background:#1a4a7a; }}
+.btn-danger {{ background:var(--danger); }}
+.btn-danger:hover {{ background:var(--danger-hover); }}
+.btn-secondary {{ background:var(--input-bg); color:var(--fg); }}
+.btn-secondary:hover {{ background:var(--card-active); }}
 .gallery {{ display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr));
   gap:12px; margin-top:15px; }}
-.gallery-item {{ background:#0f3460; border-radius:8px; overflow:hidden; position:relative; }}
+.gallery-item {{ background:var(--gallery-bg); border-radius:8px; overflow:hidden; position:relative; }}
 .gallery-item img {{ width:100%; height:120px; object-fit:cover; display:block; }}
-.gallery-item .name {{ padding:6px 8px; font-size:0.75em; color:#aaa;
+.gallery-item .name {{ padding:6px 8px; font-size:0.75em; color:var(--muted);
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
 .gallery-item .actions {{ padding:4px 8px 8px; }}
-.upload-section {{ margin-top:20px; padding-top:15px; border-top:1px solid #333; }}
-.upload-section input[type="file"] {{ color:#aaa; font-size:0.9em; }}
-.empty {{ color:#555; font-style:italic; padding:20px; text-align:center; }}
+.upload-section {{ margin-top:20px; padding-top:15px; border-top:1px solid var(--border); }}
+.upload-section input[type="file"] {{ color:var(--muted); font-size:0.9em; }}
+.empty {{ color:var(--link-muted); font-style:italic; padding:20px; text-align:center; }}
 .trash-header {{ display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; }}
+.log-table {{ width:100%; border-collapse:collapse; margin-top:10px; font-size:0.9em; }}
+.log-table th {{ background:var(--table-head); color:var(--accent); padding:10px 12px;
+  text-align:left; font-weight:600; border-bottom:2px solid var(--table-border); }}
+.log-table td {{ padding:8px 12px; border-bottom:1px solid var(--table-border); color:var(--fg); }}
+.log-table tr:nth-child(even) {{ background:var(--table-stripe); }}
+.log-table tr:hover {{ background:var(--card-active); }}
+.log-empty {{ color:var(--link-muted); font-style:italic; padding:20px; text-align:center; }}
+.log-info {{ color:var(--muted); font-size:0.85em; margin-top:10px; }}
 </style>
 </head>
 <body>
+<button class="theme-toggle" id="themeToggle" title="Theme wechseln"></button>
 <div class="container">
   <div class="header">
-    <h1>Admin Panel</h1>
+    <h1>Admin Panel <span style="font-size:0.45em;color:var(--muted);font-weight:normal;">v{version}</span></h1>
     <div class="header-links">
       <a href="/">Upload-Seite</a>
       <a href="/admin/logout">Abmelden</a>
@@ -267,6 +400,7 @@ input:focus {{ border-color:#e94560; outline:none; }}
     <button class="tab" onclick="showTab('logos')">Logos</button>
     <button class="tab" onclick="showTab('pictures')">Bilder</button>
     <button class="tab" onclick="showTab('trash')">Papierkorb</button>
+    <button class="tab" onclick="showTab('uploadlog')">Upload-Log</button>
     <button class="tab" onclick="showTab('password')">Passwort</button>
   </div>
 
@@ -285,6 +419,11 @@ input:focus {{ border-color:#e94560; outline:none; }}
       <label for="trash_days">Papierkorb leeren nach (Tagen, 0 = nie)</label>
       <input type="number" name="delete_after_days" id="trash_days"
              value="{delete_after_days}" min="0" max="9999" step="1">
+
+      <div class="section-title">Upload-Log</div>
+      <label for="log_max">Maximale Anzahl Log-Eintraege</label>
+      <input type="number" name="upload_log_max" id="log_max"
+             value="{upload_log_max}" min="10" max="10000" step="10">
 
       <div class="section-title">Speicherplatz</div>
       <label for="min_free">Mindest-Freispeicher fuer Uploads (MB)</label>
@@ -311,7 +450,7 @@ input:focus {{ border-color:#e94560; outline:none; }}
 
   <!-- Logos -->
   <div class="panel" id="panel-logos">
-    <h3 style="color:#e94560;margin-bottom:5px;">Logo-Bilder</h3>
+    <h3 style="color:var(--accent);margin-bottom:5px;">Logo-Bilder</h3>
     {logos_gallery}
     <div class="upload-section">
       <form method="POST" action="/admin/upload/logo" enctype="multipart/form-data">
@@ -323,7 +462,7 @@ input:focus {{ border-color:#e94560; outline:none; }}
 
   <!-- Pictures -->
   <div class="panel" id="panel-pictures">
-    <h3 style="color:#e94560;margin-bottom:5px;">Bilder</h3>
+    <h3 style="color:var(--accent);margin-bottom:5px;">Bilder</h3>
     {pictures_gallery}
     <div class="upload-section">
       <form method="POST" action="/admin/upload/pictures" enctype="multipart/form-data">
@@ -336,10 +475,17 @@ input:focus {{ border-color:#e94560; outline:none; }}
   <!-- Trash -->
   <div class="panel" id="panel-trash">
     <div class="trash-header">
-      <h3 style="color:#e94560;">Papierkorb</h3>
+      <h3 style="color:var(--accent);">Papierkorb</h3>
       {trash_clear_btn}
     </div>
     {trash_gallery}
+  </div>
+
+  <!-- Upload Log -->
+  <div class="panel" id="panel-uploadlog">
+    <h3 style="color:var(--accent);margin-bottom:10px;">Upload-Log</h3>
+    {upload_log_html}
+    <p class="log-info">Es werden die letzten {upload_log_max} Eintraege angezeigt.</p>
   </div>
 
   <!-- Password -->
@@ -358,6 +504,13 @@ input:focus {{ border-color:#e94560; outline:none; }}
 </div>
 
 <script>
+(function(){{
+  const tb=document.getElementById('themeToggle'),root=document.documentElement;
+  function setTheme(t){{root.setAttribute('data-theme',t);localStorage.setItem('theme',t);
+    tb.textContent=t==='dark'?'\u2600\ufe0f':'\ud83c\udf19';}}
+  setTheme(localStorage.getItem('theme')||'dark');
+  tb.addEventListener('click',function(){{setTheme(root.getAttribute('data-theme')==='dark'?'light':'dark');}});
+}})();
 function showTab(name) {{
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -397,6 +550,7 @@ def create_app(config_path: str | None = None) -> Flask:
     for d in folder_map.values():
         os.makedirs(d, exist_ok=True)
 
+    upload_log_file = get_upload_log_path(config_file)
     title = cfg.get("web", "title", fallback="RPI Picture Show")
     greeting = cfg.get("web", "greeting", fallback="Willkommen! Laden Sie hier Ihre Bilder hoch.")
 
@@ -477,6 +631,24 @@ def create_app(config_path: str | None = None) -> Flask:
             )
         return '<div class="gallery">' + "".join(items) + '</div>'
 
+    def build_upload_log_html() -> str:
+        entries = load_upload_log(upload_log_file)
+        if not entries:
+            return '<div class="log-empty">Noch keine Uploads protokolliert.</div>'
+        rows = []
+        for e in reversed(entries):
+            rows.append(
+                f'<tr><td>{e.get("time","")}</td>'
+                f'<td>{e.get("file","")}</td>'
+                f'<td>{e.get("folder","")}</td>'
+                f'<td>{e.get("ip","")}</td></tr>'
+            )
+        return (
+            '<table class="log-table"><thead><tr>'
+            '<th>Zeitpunkt</th><th>Datei</th><th>Ordner</th><th>IP-Adresse</th>'
+            '</tr></thead><tbody>' + "".join(rows) + '</tbody></table>'
+        )
+
     def msg_html(msg: str, msg_type: str = "success") -> str:
         if not msg:
             return ""
@@ -502,6 +674,7 @@ def create_app(config_path: str | None = None) -> Flask:
             title=title, greeting=greeting,
             logo_html=get_logo_html(),
             message_html=msg_html(msg, msg_type),
+            version=get_version(),
         )
         return Response(html, mimetype="text/html")
 
@@ -521,6 +694,8 @@ def create_app(config_path: str | None = None) -> Flask:
         file.save(dest)
         client_ip = request.remote_addr
         log.info("Upload: %s von IP %s", filename, client_ip)
+        max_log = reload_cfg().getint("logging", "upload_log_max", fallback=UPLOAD_LOG_MAX_DEFAULT)
+        log_upload_entry(upload_log_file, filename, "uploaded", client_ip, max_log)
         return redirect(url_for("index", msg=f"Bild '{filename}' erfolgreich hochgeladen!", type="success"))
 
     # ---------------------------------------------------------------
@@ -590,6 +765,9 @@ def create_app(config_path: str | None = None) -> Flask:
             pictures_gallery=build_gallery("pictures"),
             trash_gallery=build_gallery("trash"),
             trash_clear_btn=trash_clear,
+            upload_log_html=build_upload_log_html(),
+            upload_log_max=current_cfg.getint("logging", "upload_log_max", fallback=UPLOAD_LOG_MAX_DEFAULT),
+            version=get_version(),
         )
         return Response(html, mimetype="text/html")
 
@@ -612,6 +790,12 @@ def create_app(config_path: str | None = None) -> Flask:
             if not current_cfg.has_section("trash"):
                 current_cfg.add_section("trash")
             current_cfg.set("trash", "delete_after_days", trash_days)
+        # Upload log max
+        log_max = request.form.get("upload_log_max", "")
+        if log_max.isdigit() and int(log_max) >= 10:
+            if not current_cfg.has_section("logging"):
+                current_cfg.add_section("logging")
+            current_cfg.set("logging", "upload_log_max", log_max)
         # Min free space
         min_free = request.form.get("min_free_space_mb", "")
         if min_free.isdigit():
@@ -648,6 +832,8 @@ def create_app(config_path: str | None = None) -> Flask:
         file.save(dest)
         client_ip = request.remote_addr
         log.info("Admin-Upload: %s -> %s/ von IP %s", filename, folder, client_ip)
+        max_log = reload_cfg().getint("logging", "upload_log_max", fallback=UPLOAD_LOG_MAX_DEFAULT)
+        log_upload_entry(upload_log_file, filename, folder, client_ip, max_log)
         return redirect(url_for("admin_dashboard", msg=f"'{filename}' hochgeladen in {folder}/.", type="success"))
 
     @app.route("/admin/delete/<folder>/<filename>", methods=["POST"])
