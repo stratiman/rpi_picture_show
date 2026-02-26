@@ -86,6 +86,20 @@ def make_timestamped_name(filename: str) -> str:
     return f"{name}_{ts}{ext}"
 
 
+def file_exists_in_folder(folder: str, original_filename: str) -> bool:
+    """Check if a file with the same base name already exists (ignoring timestamp suffix)."""
+    name, ext = os.path.splitext(original_filename)
+    ext_lower = ext.lower()
+    for existing in os.listdir(folder):
+        ex_name, ex_ext = os.path.splitext(existing)
+        if ex_ext.lower() != ext_lower:
+            continue
+        # Match exact name or name with timestamp suffix (name_YYYYMMDD_HHMMSS)
+        if ex_name == name or ex_name.startswith(name + "_"):
+            return True
+    return False
+
+
 UPLOAD_LOG_MAX_DEFAULT = 200
 
 
@@ -812,23 +826,30 @@ def create_app(config_path: str | None = None) -> Flask:
             return redirect(url_for("index", msg="Nicht genug Speicherplatz!", type="error"))
         saved = []
         skipped = []
+        duplicates = []
         client_ip = request.remote_addr
         max_log = reload_cfg().getint("logging", "upload_log_max", fallback=UPLOAD_LOG_MAX_DEFAULT)
         for file in files:
             if not allowed_file(file.filename):
                 skipped.append(file.filename)
                 continue
-            filename = make_timestamped_name(secure_filename(file.filename))
+            safe_name = secure_filename(file.filename)
+            if file_exists_in_folder(folder_map["uploaded"], safe_name):
+                duplicates.append(file.filename)
+                continue
+            filename = make_timestamped_name(safe_name)
             dest = os.path.join(folder_map["uploaded"], filename)
             file.save(dest)
             log.info("Upload: %s von IP %s", filename, client_ip)
             log_upload_entry(upload_log_file, filename, "uploaded", client_ip, max_log)
             saved.append(filename)
-        if not saved and skipped:
+        if not saved and not duplicates and skipped:
             return redirect(url_for("index", msg="Nicht unterstuetztes Dateiformat.", type="error"))
         msg_parts = []
         if saved:
             msg_parts.append(f"{len(saved)} Bild(er) erfolgreich hochgeladen!")
+        if duplicates:
+            msg_parts.append(f"{len(duplicates)} bereits vorhanden.")
         if skipped:
             msg_parts.append(f"{len(skipped)} uebersprungen (Format).")
         return redirect(url_for("index", msg=" ".join(msg_parts), type="success" if saved else "error"))
@@ -963,13 +984,18 @@ def create_app(config_path: str | None = None) -> Flask:
             return redirect(url_for("admin_dashboard", msg="Nicht genug Speicherplatz!", type="error"))
         saved = []
         skipped = []
+        duplicates = []
         client_ip = request.remote_addr
         max_log = reload_cfg().getint("logging", "upload_log_max", fallback=UPLOAD_LOG_MAX_DEFAULT)
         for file in files:
             if not allowed_file(file.filename):
                 skipped.append(file.filename)
                 continue
-            filename = make_timestamped_name(secure_filename(file.filename))
+            safe_name = secure_filename(file.filename)
+            if file_exists_in_folder(folder_map[folder], safe_name):
+                duplicates.append(file.filename)
+                continue
+            filename = make_timestamped_name(safe_name)
             dest = os.path.join(folder_map[folder], filename)
             file.save(dest)
             log.info("Admin-Upload: %s -> %s/ von IP %s", filename, folder, client_ip)
@@ -981,11 +1007,13 @@ def create_app(config_path: str | None = None) -> Flask:
                 f.write("rescan")
         except OSError:
             pass
-        if not saved and skipped:
+        if not saved and not duplicates and skipped:
             return redirect(url_for("admin_dashboard", msg="Nicht unterstuetztes Dateiformat.", type="error"))
         msg_parts = []
         if saved:
             msg_parts.append(f"{len(saved)} Datei(en) hochgeladen in {folder}/.")
+        if duplicates:
+            msg_parts.append(f"{len(duplicates)} bereits vorhanden.")
         if skipped:
             msg_parts.append(f"{len(skipped)} uebersprungen (Format).")
         return redirect(url_for("admin_dashboard", msg=" ".join(msg_parts), type="success" if saved else "error"))
