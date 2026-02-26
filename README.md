@@ -31,8 +31,8 @@ In meiner Bar steht ein TV und dort soll das Bar-Logo angezeigt werden. Ab und z
 
 ## Voraussetzungen
 
-- Raspberry Pi (getestet: Zero W v1.1, Model 3B)
-- Raspberry Pi OS Lite (ohne Desktop) - Bookworm oder Trixie
+- Raspberry Pi (getestet: Model 3B mit Trixie, Zero W v1.1)
+- Raspberry Pi OS Lite (ohne Desktop) - **Trixie** (empfohlen), Bookworm
 - Python 3
 - pygame, Flask, git
 
@@ -377,10 +377,11 @@ Optionale Git-Push-Argumente werden weitergeleitet:
 
 ## Versionshistorie
 
-### v1.0.3
+### v1.1.0
+- **Volle Trixie-Unterstuetzung**: Laeuft jetzt zuverlaessig auf Raspberry Pi OS Trixie (Debian 13) mit SDL 2.28+ und vc4-kms-v3d
+- **Direktes Framebuffer-Rendering**: Schreibt Bilder direkt nach `/dev/fb0` via mmap - umgeht kmsdrm-Probleme auf modernen Pi-Systemen vollstaendig
 - **System-Tab im Admin-Panel**: Slideshow starten/stoppen/neustarten, System neustarten und herunterfahren - alles ueber den Browser
 - **install.sh Update-Modus**: Erkennt bestehende Installation automatisch und fuehrt `git pull` statt Neuinstallation durch, sichert und stellt `config.ini` wieder her
-- **Display-Fix fuer Trixie/Bookworm**: Konsolen-Overlay wird ausgeblendet (VT-Wechsel, fbcon-Unbind), damit kmsdrm korrekt auf den HDMI-Ausgang rendert
 - **Git-Repo-Pruefung**: Update-Funktion zeigt verstaendliche Fehlermeldung wenn kein Git-Repository vorhanden
 - **Platzhalterbilder**: `install.sh` kopiert Beispielbilder bei Erstinstallation in die Bilderordner
 
