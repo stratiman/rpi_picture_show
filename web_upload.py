@@ -229,11 +229,22 @@ input[type="file"] {{ display:none; }}
 }})();
 const fi=document.getElementById('fileInput'),fn=document.getElementById('fileName'),
   ub=document.getElementById('uploadBtn'),dz=document.getElementById('dropZone'),
-  pv=document.getElementById('preview');
+  pv=document.getElementById('preview'),maxBytes={max_upload_mb}*1024*1024;
 function showFiles(files){{
   if(!files||!files.length)return;
   const n=files.length;
-  fn.textContent=n===1?files[0].name:n+' Bilder ausgewaehlt';
+  let total=0;
+  for(let i=0;i<n;i++)total+=files[i].size;
+  const totalMB=(total/1024/1024).toFixed(1);
+  if(total>maxBytes){{
+    fn.textContent=n+' Bilder ('+totalMB+' MB) - zu gross! Max: {max_upload_mb} MB';
+    fn.style.color='var(--msg-err-fg)';
+    ub.disabled=true;
+    pv.innerHTML='';pv.style.display='none';
+    return;
+  }}
+  fn.style.color='';
+  fn.textContent=n===1?files[0].name+' ('+totalMB+' MB)':n+' Bilder ('+totalMB+' MB)';
   ub.disabled=false;
   pv.innerHTML='';pv.style.display='flex';pv.style.flexWrap='wrap';
   pv.style.gap='8px';pv.style.justifyContent='center';
@@ -814,6 +825,7 @@ def create_app(config_path: str | None = None) -> Flask:
             logo_html=get_logo_html(),
             message_html=msg_html(msg, msg_type),
             version=get_version(),
+            max_upload_mb=max_upload_mb,
         )
         return Response(html, mimetype="text/html")
 
