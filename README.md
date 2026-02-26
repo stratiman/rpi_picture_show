@@ -7,7 +7,7 @@ Ein einfaches Webinterface ermoeglicht das Hochladen von Bildern per Browser.
 
 ## Why
 
-In meiner Bar steht ein TV und dort soll das Bar-Logo angezeigt werden. Ab und zu werden auch Fotos angezeigt. Gäste haben die Möglichkeit Bilder hochzuladen. Diese werden dann ebenfalls eingeblendet. 
+In meiner Bar steht ein TV und dort soll das Bar-Logo angezeigt werden. Ab und zu werden auch Fotos angezeigt. Gäste haben die Möglichkeit Bilder hochzuladen. Diese werden dann ebenfalls eingeblendet.
 
 ## Features
 
@@ -19,11 +19,14 @@ In meiner Bar steht ein TV und dort soll das Bar-Logo angezeigt werden. Ab und z
 - **Web-Upload**: Einfaches Webinterface zum Hochladen von Bildern per Browser/Handy
 - **Dark/Light Mode**: Theme-Umschaltung per Button auf allen Seiten (wird im Browser gespeichert)
 - **Upload-Log**: Alle Uploads werden mit Zeitpunkt, Dateiname, Ordner und IP-Adresse protokolliert
-- Konfigurierbare Uebergangseffekte (Fade, Slide, kein Effekt)
+- Konfigurierbare Uebergangseffekte (Fade, Slide, Zoom, Wipe, Dissolve, Random)
 - Automatischer Start beim Booten via systemd
 - Laeuft ohne Desktop (X11/Wayland) direkt ueber KMS/DRM bzw. Framebuffer
 - Rekursive Unterordner-Unterstuetzung
 - Optionales Mischen der Bildreihenfolge
+- **Admin-Panel**: Passwortgeschuetztes Panel fuer Einstellungen, Bildverwaltung und System-Steuerung
+- **System-Steuerung**: Slideshow starten/stoppen, System neustarten/herunterfahren - alles ueber den Browser
+- **Update-Funktion**: Software-Update direkt aus dem Admin-Panel oder per `install.sh`
 - **Versionierung**: Versionsnummer im Webinterface sichtbar, Auto-Inkrement per release.sh
 
 ## Voraussetzungen
@@ -50,7 +53,7 @@ chmod +x install.sh
 ./install.sh
 ```
 
-Das Script installiert alle Abhaengigkeiten, kopiert die Dateien und richtet die systemd-Services ein.
+Das Script installiert alle Abhaengigkeiten, kopiert Platzhalterbilder und richtet die systemd-Services ein.
 
 ### 3. Bilder ablegen
 
@@ -63,6 +66,7 @@ Das Script installiert alle Abhaengigkeiten, kopiert die Dateien und richtet die
 ```
 
 Unterordner werden automatisch mit durchsucht.
+Bei der Erstinstallation werden Platzhalterbilder in die Ordner kopiert.
 
 ### 4. Starten
 
@@ -112,6 +116,7 @@ http://<PI-IP-ADRESSE>/admin
 - **Upload-Log**: Tabelle aller Uploads mit Zeitpunkt, Dateiname, Ordner und IP-Adresse
 - **Passwort**: Admin-Passwort aendern
 - **Update**: Software-Update von GitHub direkt aus dem Admin-Panel
+- **System**: Slideshow starten/stoppen/neustarten, System neustarten oder herunterfahren
 
 Einstellungsaenderungen werden sofort in die `config.ini` geschrieben.
 Die Slideshow uebernimmt neue Timings beim naechsten Ordner-Rescan automatisch.
@@ -140,9 +145,9 @@ uploaded_folder = uploaded
 trash_folder = trash
 
 [timing]
-logo_display_seconds = 5
+logo_display_seconds = 30
 pictures_display_seconds = 10
-uploaded_display_seconds = 8
+uploaded_display_seconds = 10
 
 [display]
 transition = fade
@@ -166,7 +171,7 @@ greeting = Willkommen! Laden Sie hier Ihre Bilder hoch.
 min_free_space_mb = 100
 
 [logging]
-upload_log_max = 200
+upload_log_max = 2000
 
 [admin]
 # Passwort-Hash (SHA-256) - Standard: admin
@@ -277,33 +282,25 @@ journalctl -u rpi-slideshow-web -f          # Log live anzeigen
 
 ## Beenden
 
+- Per Admin-Panel: **System-Tab** -> **Slideshow stoppen** (Konsole wird wiederhergestellt)
 - Per Service: `sudo systemctl stop rpi-slideshow`
 - Per Tastatur: **ESC** oder **Q** (falls Tastatur angeschlossen)
 
-## Unterstuetzte Bildformate
-
-JPG, JPEG, PNG, BMP, GIF (statisch)
-
-## Fehlerbehebung
-
-**Kein Bild sichtbar:**
-- Pruefen ob Bilder in den Ordnern liegen: `ls /home/pi/slideshow/logo/`
-- Log pruefen: `journalctl -u rpi-slideshow -f`
-
-**Service startet nicht:**
-- Status pruefen: `sudo systemctl status rpi-slideshow`
-- Manuell testen: `python3 /home/pi/rpi-picture-show/slideshow.py`
-
-**Web-Upload nicht erreichbar:**
-- Status pruefen: `sudo systemctl status rpi-slideshow-web`
-- Port pruefen: `ss -tlnp | grep 80`
-- Log pruefen: `journalctl -u rpi-slideshow-web -f`
-
-**Falscher Bildpfad:**
-- `config.ini` pruefen und Pfade anpassen
-- Services neustarten: `sudo systemctl restart rpi-slideshow rpi-slideshow-web`
-
 ## Update
+
+### Per install.sh (empfohlen)
+
+```bash
+cd /home/pi/rpi-picture-show
+./install.sh
+```
+
+Das Script erkennt die bestehende Installation automatisch und fuehrt ein Update durch:
+1. Sichert die `config.ini`
+2. Holt die neueste Version per `git pull`
+3. Stellt die `config.ini` wieder her
+4. Kopiert aktualisierte Service-Dateien
+5. Startet die Services neu
 
 ### Ueber das Admin-Panel
 
@@ -320,8 +317,39 @@ Lokale Einstellungen (config.ini) bleiben bei einem Update erhalten.
 ```bash
 cd /home/pi/rpi-picture-show
 git pull
+sudo cp rpi-slideshow.service rpi-slideshow-web.service /etc/systemd/system/
+sudo systemctl daemon-reload
 sudo systemctl restart rpi-slideshow rpi-slideshow-web
 ```
+
+## Unterstuetzte Bildformate
+
+JPG, JPEG, PNG, BMP, GIF (statisch)
+
+## Fehlerbehebung
+
+**Kein Bild sichtbar (schwarzer Bildschirm):**
+- Pruefen ob Bilder in den Ordnern liegen: `ls /home/pi/slideshow/logo/`
+- Log pruefen: `journalctl -u rpi-slideshow -f`
+- Auf Trixie/Bookworm: Service muss auf eigenem VT laufen (wird durch Service-Datei sichergestellt)
+- Konsole ueberlagert Slideshow: `install.sh` erneut ausfuehren um Service-Datei zu aktualisieren
+
+**Service startet nicht:**
+- Status pruefen: `sudo systemctl status rpi-slideshow`
+- Manuell testen: `python3 /home/pi/rpi-picture-show/slideshow.py`
+
+**Web-Upload nicht erreichbar:**
+- Status pruefen: `sudo systemctl status rpi-slideshow-web`
+- Port pruefen: `ss -tlnp | grep 80`
+- Log pruefen: `journalctl -u rpi-slideshow-web -f`
+
+**Falscher Bildpfad:**
+- `config.ini` pruefen und Pfade anpassen
+- Services neustarten: `sudo systemctl restart rpi-slideshow rpi-slideshow-web`
+
+**Update fehlgeschlagen ("Kein Git-Repository"):**
+- Die Installation muss per `git clone` erfolgt sein
+- Falls manuell kopiert: Repository neu klonen und `install.sh` ausfuehren
 
 ## Versionierung
 
@@ -346,3 +374,28 @@ Optionale Git-Push-Argumente werden weitergeleitet:
 ```bash
 ./release.sh origin main
 ```
+
+## Versionshistorie
+
+### v1.0.3
+- **System-Tab im Admin-Panel**: Slideshow starten/stoppen/neustarten, System neustarten und herunterfahren - alles ueber den Browser
+- **install.sh Update-Modus**: Erkennt bestehende Installation automatisch und fuehrt `git pull` statt Neuinstallation durch, sichert und stellt `config.ini` wieder her
+- **Display-Fix fuer Trixie/Bookworm**: Konsolen-Overlay wird ausgeblendet (VT-Wechsel, fbcon-Unbind), damit kmsdrm korrekt auf den HDMI-Ausgang rendert
+- **Git-Repo-Pruefung**: Update-Funktion zeigt verstaendliche Fehlermeldung wenn kein Git-Repository vorhanden
+- **Platzhalterbilder**: `install.sh` kopiert Beispielbilder bei Erstinstallation in die Bilderordner
+
+### v1.0.2
+- **Unicode-Fix**: Theme-Toggle Emojis korrekt escaped (behebt Internal Server Error auf allen Seiten)
+
+### v1.0.1
+- **Port 80 Binding**: Fix fuer Web-Service auf privilegiertem Port
+- **Platzhalterbilder**: Beispielbilder fuer Logo und Pictures im Repository
+
+### v1.0.0
+- **Slideshow**: Vollbild-Anzeige mit konfigurierbaren Uebergangseffekten (Fade, Slide, Zoom, Wipe, Dissolve, Random)
+- **Web-Upload**: Upload-Seite mit Drag & Drop, Bildvorschau, Dark/Light Mode
+- **Admin-Panel**: Passwortgeschuetzter Bereich fuer Einstellungen, Bildverwaltung, Papierkorb, Upload-Log, Passwort-Aenderung und Software-Update
+- **Upload-Log**: Protokollierung aller Uploads mit Zeitpunkt, Dateiname, Ordner und IP-Adresse (konfigurierbare Max-Eintraege)
+- **Papierkorb**: Automatisches Cleanup nach konfigurierbarer Frist
+- **Versionierung**: VERSION-Datei, Anzeige im Webinterface, release.sh fuer automatische Versionierung
+- **systemd-Services**: Automatischer Start beim Booten, Neustart bei Fehler
