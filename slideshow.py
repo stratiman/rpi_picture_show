@@ -437,7 +437,8 @@ def hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
 class Slideshow:
     def __init__(self, config_path: str | None = None):
         self.running = True
-        self.cfg = load_config(config_path or get_config_path())
+        self.config_path = config_path or get_config_path()
+        self.cfg = load_config(self.config_path)
 
         # Paths
         base = self.cfg.get("paths", "base_path", fallback="/home/pi/slideshow")
@@ -485,6 +486,25 @@ class Slideshow:
             self.transition_fn = None  # picked per image
         else:
             self.transition_fn = TRANSITIONS.get(self.transition_name, transition_fade)
+
+    # ------------------------------------------------------------------
+
+    def reload_settings(self):
+        """Re-read config.ini to pick up changes made via the admin panel."""
+        self.cfg = load_config(self.config_path)
+        self.logo_seconds = self.cfg.getfloat("timing", "logo_display_seconds", fallback=5.0)
+        self.pics_seconds = self.cfg.getfloat("timing", "pictures_display_seconds", fallback=10.0)
+        self.uploaded_seconds = self.cfg.getfloat("timing", "uploaded_display_seconds", fallback=8.0)
+        self.pictures_per_logo = self.cfg.getint("slideshow", "pictures_per_logo", fallback=1)
+        self.trash_days = self.cfg.getint("trash", "delete_after_days", fallback=30)
+        self.transition_name = self.cfg.get("display", "transition", fallback="fade")
+        self.transition_duration_min = self.cfg.getint("display", "transition_duration_min_ms", fallback=300)
+        self.transition_duration_max = self.cfg.getint("display", "transition_duration_max_ms", fallback=800)
+        self.transition_duration_random = self.cfg.getboolean("display", "transition_duration_random", fallback=False)
+        self.use_random_transition = self.transition_name == "random"
+        if not self.use_random_transition:
+            self.transition_fn = TRANSITIONS.get(self.transition_name, transition_fade)
+        log.info("Einstellungen neu geladen")
 
     # ------------------------------------------------------------------
 
@@ -597,6 +617,7 @@ class Slideshow:
         screen = init_display()
 
         while self.running:
+            self.reload_settings()
             logos, pics = self.collect()
             self.cleanup_trash()
 

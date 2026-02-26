@@ -418,6 +418,10 @@ input:focus {{ border-color:var(--accent); outline:none; }}
 .upload-section input[type="file"] {{ color:var(--muted); font-size:0.9em; }}
 .empty {{ color:var(--link-muted); font-style:italic; padding:20px; text-align:center; }}
 .trash-header {{ display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; }}
+.restore-row {{ display:flex; gap:4px; margin-top:4px; }}
+.restore-row select {{ padding:4px 6px; font-size:0.8em; border-radius:4px; border:1px solid var(--border);
+  background:var(--input-bg); color:var(--fg); flex:1; }}
+.restore-row .btn-sm {{ margin-top:0; white-space:nowrap; }}
 .log-table {{ width:100%; border-collapse:collapse; margin-top:10px; font-size:0.9em; }}
 .log-table th {{ background:var(--table-head); color:var(--accent); padding:10px 12px;
   text-align:left; font-weight:600; border-bottom:2px solid var(--table-border); }}
@@ -604,6 +608,20 @@ function confirmDelete(form, name) {{
 function confirmClearTrash() {{
   if(confirm('Gesamten Papierkorb leeren?')) document.getElementById('clearTrashForm').submit();
 }}
+function restoreImage(filename) {{
+  var sel = document.getElementById('restore-target-' + filename);
+  var target = sel.value;
+  var labels = {{'pictures':'Bilder','logo':'Logos','uploaded':'Uploaded'}};
+  if(!confirm('\"' + filename + '\" nach ' + labels[target] + ' wiederherstellen?')) return;
+  var form = document.createElement('form');
+  form.method = 'POST';
+  form.action = '/admin/restore/' + encodeURIComponent(filename);
+  var input = document.createElement('input');
+  input.type = 'hidden'; input.name = 'target'; input.value = target;
+  form.appendChild(input);
+  document.body.appendChild(form);
+  form.submit();
+}}
 function checkUpdate() {{
   var btn=document.getElementById('btnCheckUpdate');
   var res=document.getElementById('updateResult');
@@ -778,11 +796,25 @@ def create_app(config_path: str | None = None) -> Flask:
                     f'confirmDelete(this,\'{img_name}\');">'
                     f'<button type="submit" class="btn btn-sm btn-danger">Loeschen</button></form>'
                 )
+            restore_html = ""
+            if folder_key == "trash":
+                esc_name = img_name.replace("'", "\\'")
+                restore_html = (
+                    f'<div class="restore-row">'
+                    f'<select id="restore-target-{img_name}">'
+                    f'<option value="pictures">Bilder</option>'
+                    f'<option value="logo">Logos</option>'
+                    f'<option value="uploaded">Uploaded</option>'
+                    f'</select>'
+                    f'<button type="button" class="btn btn-sm btn-secondary" '
+                    f'onclick="restoreImage(\'{esc_name}\')">Wiederherstellen</button>'
+                    f'</div>'
+                )
             items.append(
                 f'<div class="gallery-item">'
                 f'<img src="{img_url}" alt="{img_name}" loading="lazy">'
                 f'<div class="name" title="{img_name}">{img_name}</div>'
-                f'<div class="actions">{delete_html}</div></div>'
+                f'<div class="actions">{delete_html}{restore_html}</div></div>'
             )
         return '<div class="gallery">' + "".join(items) + '</div>'
 
@@ -994,6 +1026,12 @@ def create_app(config_path: str | None = None) -> Flask:
         current_cfg.set("display", "transition_duration_random", dur_random)
         save_config(current_cfg, config_file)
         log.info("Einstellungen gespeichert")
+        # Rescan triggern damit Slideshow neue Einstellungen uebernimmt
+        try:
+            with open(RESCAN_TRIGGER, "w") as f:
+                f.write("rescan")
+        except OSError:
+            pass
         return redirect(url_for("admin_dashboard", msg="Einstellungen gespeichert.", type="success"))
 
     @app.route("/admin/upload/<folder>", methods=["POST"])
@@ -1074,6 +1112,45 @@ def create_app(config_path: str | None = None) -> Flask:
                 count += 1
         log.info("Papierkorb geleert: %d Dateien", count)
         return redirect(url_for("admin_dashboard", msg=f"Papierkorb geleert ({count} Dateien).", type="success"))
+
+    @app.route("/admin/restore/<filename>", methods=["POST"])
+    @require_admin
+    def admin_restore(filename):
+        target = request.form.get("target", "")
+        if target not in ("logo", "pictures", "uploaded"):
+            return redirect(url_for("admin_dashboard", msg="Ungueltiger Zielordner.", type="error"))
+        filename = secure_filename(filename)
+        src = os.path.join(folder_map["trash"], filename)
+        if not os.path.isfile(src):
+            return redirect(url_for("admin_dashboard", msg="Datei nicht gefunden.", type="error"))
+        dest_dir = folder_map[target]
+        # Strip timestamp prefix added by slideshow (e.g. "1234567890_photo.jpg" -> "photo.jpg")
+        original_name = filename
+        parts = filename.split("_", 1)
+        if len(parts) == 2 and parts[0].isdigit():
+            original_name = parts[1]
+        dest = os.path.join(dest_dir, original_name)
+        # Avoid overwriting existing files
+        if os.path.exists(dest):
+            base_name, ext = os.path.splitext(original_name)
+            i = 1
+            while os.path.exists(dest):
+                dest = os.path.join(dest_dir, f"{base_name}_{i}{ext}")
+                i += 1
+        shutil.move(src, dest)
+        restored_name = os.path.basename(dest)
+        folder_labels = {"logo": "Logos", "pictures": "Bilder", "uploaded": "Uploaded"}
+        log.info("Wiederhergestellt: %s -> %s/%s", filename, target, restored_name)
+        # Trigger rescan if restored to logo or pictures
+        if target in ("logo", "pictures"):
+            try:
+                with open(RESCAN_TRIGGER, "w") as f:
+                    f.write("rescan")
+            except OSError:
+                pass
+        return redirect(url_for("admin_dashboard",
+                                msg=f"'{restored_name}' nach {folder_labels[target]} wiederhergestellt.",
+                                type="success"))
 
     @app.route("/admin/password", methods=["POST"])
     @require_admin
