@@ -208,7 +208,7 @@ input[type="file"] {{ display:none; }}
 (function(){{
   const tb=document.getElementById('themeToggle'),root=document.documentElement;
   function setTheme(t){{root.setAttribute('data-theme',t);localStorage.setItem('theme',t);
-    tb.textContent=t==='dark'?'\u2600\ufe0f':'\ud83c\udf19';}}
+    tb.textContent=t==='dark'?'\\u2600\\ufe0f':'\\ud83c\\udf19';}}
   setTheme(localStorage.getItem('theme')||'dark');
   tb.addEventListener('click',function(){{setTheme(root.getAttribute('data-theme')==='dark'?'light':'dark');}});
 }})();
@@ -284,7 +284,7 @@ a:hover {{ color:var(--accent); }}
 (function(){{
   const tb=document.getElementById('themeToggle'),root=document.documentElement;
   function setTheme(t){{root.setAttribute('data-theme',t);localStorage.setItem('theme',t);
-    tb.textContent=t==='dark'?'\u2600\ufe0f':'\ud83c\udf19';}}
+    tb.textContent=t==='dark'?'\\u2600\\ufe0f':'\\ud83c\\udf19';}}
   setTheme(localStorage.getItem('theme')||'dark');
   tb.addEventListener('click',function(){{setTheme(root.getAttribute('data-theme')==='dark'?'light':'dark');}});
 }})();
@@ -522,7 +522,7 @@ input:focus {{ border-color:var(--accent); outline:none; }}
 (function(){{
   const tb=document.getElementById('themeToggle'),root=document.documentElement;
   function setTheme(t){{root.setAttribute('data-theme',t);localStorage.setItem('theme',t);
-    tb.textContent=t==='dark'?'\u2600\ufe0f':'\ud83c\udf19';}}
+    tb.textContent=t==='dark'?'\\u2600\\ufe0f':'\\ud83c\\udf19';}}
   setTheme(localStorage.getItem('theme')||'dark');
   tb.addEventListener('click',function(){{setTheme(root.getAttribute('data-theme')==='dark'?'light':'dark');}});
 }})();
