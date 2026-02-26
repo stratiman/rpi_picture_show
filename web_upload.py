@@ -405,6 +405,7 @@ input:focus {{ border-color:var(--accent); outline:none; }}
     <button class="tab" onclick="showTab('uploadlog')">Upload-Log</button>
     <button class="tab" onclick="showTab('password')">Passwort</button>
     <button class="tab" onclick="showTab('update')">Update</button>
+    <button class="tab" onclick="showTab('system')">System</button>
   </div>
 
   <!-- Settings -->
@@ -505,6 +506,22 @@ input:focus {{ border-color:var(--accent); outline:none; }}
     </form>
   </div>
 
+  <!-- System -->
+  <div class="panel" id="panel-system">
+    <h3 style="color:var(--accent);margin-bottom:10px;">System</h3>
+    <p style="margin-bottom:15px;">Slideshow- und Web-Service steuern oder das System herunterfahren.</p>
+    <div style="display:flex;flex-wrap:wrap;gap:10px;">
+      <button type="button" class="btn" onclick="systemAction('stop-slideshow','Slideshow stoppen?')">Slideshow stoppen</button>
+      <button type="button" class="btn" onclick="systemAction('start-slideshow','Slideshow starten?')">Slideshow starten</button>
+      <button type="button" class="btn" onclick="systemAction('restart-slideshow','Slideshow neu starten?')">Slideshow neustarten</button>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:15px;">
+      <button type="button" class="btn" style="background:#c00;" onclick="systemAction('reboot','System wirklich neu starten?')">System neustarten</button>
+      <button type="button" class="btn" style="background:#800;" onclick="systemAction('shutdown','System wirklich herunterfahren?')">System herunterfahren</button>
+    </div>
+    <div id="systemStatus" style="display:none;margin-top:15px;padding:12px;border-radius:6px;"></div>
+  </div>
+
   <!-- Update -->
   <div class="panel" id="panel-update">
     <h3 style="color:var(--accent);margin-bottom:10px;">Software-Update</h3>
@@ -583,6 +600,27 @@ function doUpdate() {{
         st.style.background='#efe'; st.style.color='#060';
         st.innerHTML='Update auf v'+d.new_version+' erfolgreich!<br>Services werden neu gestartet. Seite wird in 5 Sekunden neu geladen ...';
         setTimeout(function(){{ location.reload(); }},5000);
+      }}
+    }})
+    .catch(function(e){{
+      st.style.background='#fee'; st.style.color='#c00';
+      st.textContent='Verbindungsfehler: '+e.message;
+    }});
+}}
+function systemAction(action, msg) {{
+  if(!confirm(msg)) return;
+  var st=document.getElementById('systemStatus');
+  st.style.display='block'; st.style.background='#eef'; st.style.color='#006';
+  st.textContent='Wird ausgefuehrt ...';
+  fetch('/admin/system',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{action:action}})}})
+    .then(function(r){{ return r.json(); }})
+    .then(function(d){{
+      if(d.error){{
+        st.style.background='#fee'; st.style.color='#c00';
+        st.textContent='Fehler: '+d.error;
+      }} else {{
+        st.style.background='#efe'; st.style.color='#060';
+        st.textContent=d.message;
       }}
     }})
     .catch(function(e){{
@@ -1088,6 +1126,80 @@ def create_app(config_path: str | None = None) -> Flask:
                 json.dumps({"error": str(e)}),
                 mimetype="application/json",
             )
+
+    # ---------------------------------------------------------------
+    # System routes (shutdown, reboot, service control)
+    # ---------------------------------------------------------------
+
+    @app.route("/admin/system", methods=["POST"])
+    @require_admin
+    def admin_system():
+        data = request.get_json(silent=True) or {}
+        action = data.get("action", "")
+
+        ALLOWED = {
+            "stop-slideshow": {
+                "cmd": ["sudo", "systemctl", "stop", "rpi-slideshow"],
+                "msg": "Slideshow gestoppt. Konsole sollte wieder sichtbar sein.",
+            },
+            "start-slideshow": {
+                "cmd": ["sudo", "systemctl", "start", "rpi-slideshow"],
+                "msg": "Slideshow gestartet.",
+            },
+            "restart-slideshow": {
+                "cmd": ["sudo", "systemctl", "restart", "rpi-slideshow"],
+                "msg": "Slideshow neu gestartet.",
+            },
+            "reboot": {
+                "cmd": ["sudo", "systemctl", "reboot"],
+                "msg": "System wird neu gestartet ...",
+                "delay": True,
+            },
+            "shutdown": {
+                "cmd": ["sudo", "systemctl", "poweroff"],
+                "msg": "System wird heruntergefahren ...",
+                "delay": True,
+            },
+        }
+
+        if action not in ALLOWED:
+            return Response(
+                json.dumps({"error": "Unbekannte Aktion: " + action}),
+                mimetype="application/json",
+            )
+
+        spec = ALLOWED[action]
+        log.info("System-Aktion: %s", action)
+
+        if spec.get("delay"):
+            # Delayed execution so the HTTP response can be sent first
+            def delayed_exec():
+                time.sleep(2)
+                try:
+                    subprocess.run(spec["cmd"], timeout=30)
+                except Exception:
+                    log.error("System-Aktion fehlgeschlagen: %s", action)
+            threading.Thread(target=delayed_exec, daemon=True).start()
+        else:
+            try:
+                proc = subprocess.run(
+                    spec["cmd"], capture_output=True, text=True, timeout=30,
+                )
+                if proc.returncode != 0:
+                    return Response(
+                        json.dumps({"error": proc.stderr.strip() or "Befehl fehlgeschlagen"}),
+                        mimetype="application/json",
+                    )
+            except subprocess.TimeoutExpired:
+                return Response(
+                    json.dumps({"error": "Zeitueberschreitung"}),
+                    mimetype="application/json",
+                )
+
+        return Response(
+            json.dumps({"message": spec["msg"]}),
+            mimetype="application/json",
+        )
 
     return app
 
