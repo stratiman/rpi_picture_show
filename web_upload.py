@@ -14,7 +14,9 @@ import logging
 import os
 import random
 import shutil
+import subprocess
 import sys
+import threading
 import time
 
 from flask import (
@@ -402,6 +404,7 @@ input:focus {{ border-color:var(--accent); outline:none; }}
     <button class="tab" onclick="showTab('trash')">Papierkorb</button>
     <button class="tab" onclick="showTab('uploadlog')">Upload-Log</button>
     <button class="tab" onclick="showTab('password')">Passwort</button>
+    <button class="tab" onclick="showTab('update')">Update</button>
   </div>
 
   <!-- Settings -->
@@ -501,6 +504,18 @@ input:focus {{ border-color:var(--accent); outline:none; }}
       <button type="submit" class="btn">Passwort aendern</button>
     </form>
   </div>
+
+  <!-- Update -->
+  <div class="panel" id="panel-update">
+    <h3 style="color:var(--accent);margin-bottom:10px;">Software-Update</h3>
+    <p>Aktuelle Version: <strong>v{version}</strong></p>
+    <button type="button" class="btn" id="btnCheckUpdate" onclick="checkUpdate()">Auf Updates pruefen</button>
+    <div id="updateResult" style="display:none;margin-top:15px;padding:12px;border-radius:6px;"></div>
+    <div id="updateActions" style="display:none;margin-top:10px;">
+      <button type="button" class="btn" onclick="doUpdate()">Jetzt aktualisieren</button>
+    </div>
+    <div id="updateStatus" style="display:none;margin-top:15px;padding:12px;border-radius:6px;"></div>
+  </div>
 </div>
 
 <script>
@@ -522,6 +537,58 @@ function confirmDelete(form, name) {{
 }}
 function confirmClearTrash() {{
   if(confirm('Gesamten Papierkorb leeren?')) document.getElementById('clearTrashForm').submit();
+}}
+function checkUpdate() {{
+  var btn=document.getElementById('btnCheckUpdate');
+  var res=document.getElementById('updateResult');
+  var act=document.getElementById('updateActions');
+  btn.disabled=true; btn.textContent='Pruefe ...';
+  res.style.display='none'; act.style.display='none';
+  fetch('/admin/check-update')
+    .then(function(r){{ return r.json(); }})
+    .then(function(d){{
+      btn.disabled=false; btn.textContent='Auf Updates pruefen';
+      res.style.display='block';
+      if(d.error){{
+        res.style.background='#fee'; res.style.color='#c00';
+        res.textContent='Fehler: '+d.error;
+      }} else if(d.update_available){{
+        res.style.background='#efe'; res.style.color='#060';
+        res.textContent='Update verfuegbar: v'+d.current+' \\u2192 v'+d.remote;
+        act.style.display='block';
+      }} else {{
+        res.style.background='#eef'; res.style.color='#006';
+        res.textContent='Kein Update verfuegbar. Version v'+d.current+' ist aktuell.';
+      }}
+    }})
+    .catch(function(e){{
+      btn.disabled=false; btn.textContent='Auf Updates pruefen';
+      res.style.display='block'; res.style.background='#fee'; res.style.color='#c00';
+      res.textContent='Verbindungsfehler: '+e.message;
+    }});
+}}
+function doUpdate() {{
+  var act=document.getElementById('updateActions');
+  var st=document.getElementById('updateStatus');
+  act.style.display='none';
+  st.style.display='block'; st.style.background='#eef'; st.style.color='#006';
+  st.textContent='Update wird durchgefuehrt ...';
+  fetch('/admin/update',{{method:'POST'}})
+    .then(function(r){{ return r.json(); }})
+    .then(function(d){{
+      if(d.error){{
+        st.style.background='#fee'; st.style.color='#c00';
+        st.textContent='Fehler: '+d.error;
+      }} else {{
+        st.style.background='#efe'; st.style.color='#060';
+        st.innerHTML='Update auf v'+d.new_version+' erfolgreich!<br>Services werden neu gestartet. Seite wird in 5 Sekunden neu geladen ...';
+        setTimeout(function(){{ location.reload(); }},5000);
+      }}
+    }})
+    .catch(function(e){{
+      st.style.background='#fee'; st.style.color='#c00';
+      st.textContent='Verbindungsfehler: '+e.message;
+    }});
 }}
 </script>
 </body></html>"""
@@ -892,6 +959,123 @@ def create_app(config_path: str | None = None) -> Flask:
             return Response("Not found", status=404)
         filename = secure_filename(filename)
         return send_from_directory(folder_map[folder], filename)
+
+    # ---------------------------------------------------------------
+    # Update routes
+    # ---------------------------------------------------------------
+
+    @app.route("/admin/check-update")
+    @require_admin
+    def admin_check_update():
+        app_dir = os.path.dirname(os.path.abspath(__file__))
+        try:
+            proc = subprocess.run(
+                ["git", "-C", app_dir, "fetch", "origin"],
+                capture_output=True, text=True, timeout=30,
+            )
+            if proc.returncode != 0:
+                return Response(
+                    json.dumps({"error": "git fetch fehlgeschlagen: " + proc.stderr.strip()}),
+                    mimetype="application/json",
+                )
+            proc = subprocess.run(
+                ["git", "-C", app_dir, "show", "origin/master:VERSION"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if proc.returncode != 0:
+                return Response(
+                    json.dumps({"error": "Konnte Remote-Version nicht lesen."}),
+                    mimetype="application/json",
+                )
+            remote_version = proc.stdout.strip()
+            current_version = get_version()
+            return Response(
+                json.dumps({
+                    "update_available": remote_version != current_version,
+                    "current": current_version,
+                    "remote": remote_version,
+                }),
+                mimetype="application/json",
+            )
+        except subprocess.TimeoutExpired:
+            return Response(
+                json.dumps({"error": "Zeitueberschreitung bei der Verbindung zu GitHub."}),
+                mimetype="application/json",
+            )
+        except Exception as e:
+            return Response(
+                json.dumps({"error": str(e)}),
+                mimetype="application/json",
+            )
+
+    @app.route("/admin/update", methods=["POST"])
+    @require_admin
+    def admin_do_update():
+        app_dir = os.path.dirname(os.path.abspath(__file__))
+        config_path_local = os.path.join(app_dir, "config.ini")
+        try:
+            # config.ini sichern (lokale Einstellungen erhalten)
+            config_backup = None
+            if os.path.isfile(config_path_local):
+                with open(config_path_local) as f:
+                    config_backup = f.read()
+
+            # Lokale Aenderungen an config.ini verwerfen, damit pull nicht fehlschlaegt
+            subprocess.run(
+                ["git", "-C", app_dir, "checkout", "--", "config.ini"],
+                capture_output=True, text=True, timeout=10,
+            )
+
+            # git pull
+            proc = subprocess.run(
+                ["git", "-C", app_dir, "pull", "origin", "master"],
+                capture_output=True, text=True, timeout=60,
+            )
+            if proc.returncode != 0:
+                # config.ini wiederherstellen bei Fehler
+                if config_backup is not None:
+                    with open(config_path_local, "w") as f:
+                        f.write(config_backup)
+                return Response(
+                    json.dumps({"error": "git pull fehlgeschlagen: " + proc.stderr.strip()}),
+                    mimetype="application/json",
+                )
+
+            # config.ini wiederherstellen
+            if config_backup is not None:
+                with open(config_path_local, "w") as f:
+                    f.write(config_backup)
+
+            new_version = get_version()
+            log.info("Update auf v%s durchgefuehrt", new_version)
+
+            # Services nach kurzer Verzoegerung neu starten
+            def restart_services():
+                time.sleep(2)
+                try:
+                    subprocess.run(
+                        ["sudo", "systemctl", "restart", "rpi-slideshow", "rpi-slideshow-web"],
+                        timeout=30,
+                    )
+                except Exception:
+                    log.error("Service-Neustart fehlgeschlagen")
+
+            threading.Thread(target=restart_services, daemon=True).start()
+
+            return Response(
+                json.dumps({"new_version": new_version, "restarting": True}),
+                mimetype="application/json",
+            )
+        except subprocess.TimeoutExpired:
+            return Response(
+                json.dumps({"error": "Zeitueberschreitung beim Update."}),
+                mimetype="application/json",
+            )
+        except Exception as e:
+            return Response(
+                json.dumps({"error": str(e)}),
+                mimetype="application/json",
+            )
 
     return app
 

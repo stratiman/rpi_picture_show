@@ -5,6 +5,10 @@ Zeigt abwechselnd Bilder aus zwei Ordnern (Logos und Pictures) an - ohne Desktop
 Hochgeladene Bilder werden bevorzugt angezeigt und danach automatisch in den Papierkorb verschoben.
 Ein einfaches Webinterface ermoeglicht das Hochladen von Bildern per Browser.
 
+## Why
+
+In meiner Bar steht ein TV und dort soll das Bar-Logo angezeigt werden. Ab und zu werden auch Fotos angezeigt. Gäste haben die Möglichkeit Bilder hochzuladen. Diese werden dann ebenfalls eingeblendet. 
+
 ## Features
 
 - Abwechselnde Anzeige: Logo -> Bild -> Logo -> Bild ...
@@ -27,14 +31,15 @@ Ein einfaches Webinterface ermoeglicht das Hochladen von Bildern per Browser.
 - Raspberry Pi (getestet: Zero W v1.1, Model 3B)
 - Raspberry Pi OS Lite (ohne Desktop) - Bookworm oder Trixie
 - Python 3
-- pygame, Flask
+- pygame, Flask, git
 
 ## Installation
 
-### 1. Projekt auf den Pi kopieren
+### 1. Repository auf den Pi klonen
 
 ```bash
-scp -r rpi-picture-show/ pi@<IP-ADRESSE>:/home/pi/
+ssh pi@<IP-ADRESSE>
+git clone https://github.com/stratiman/rpi_picture_show.git /home/pi/rpi-picture-show
 ```
 
 ### 2. Installationsscript ausfuehren
@@ -106,6 +111,7 @@ http://<PI-IP-ADRESSE>/admin
 - **Papierkorb**: Einzelne oder alle Bilder im Papierkorb loeschen
 - **Upload-Log**: Tabelle aller Uploads mit Zeitpunkt, Dateiname, Ordner und IP-Adresse
 - **Passwort**: Admin-Passwort aendern
+- **Update**: Software-Update von GitHub direkt aus dem Admin-Panel
 
 Einstellungsaenderungen werden sofort in die `config.ini` geschrieben.
 Die Slideshow uebernimmt neue Timings beim naechsten Ordner-Rescan automatisch.
@@ -296,6 +302,26 @@ JPG, JPEG, PNG, BMP, GIF (statisch)
 **Falscher Bildpfad:**
 - `config.ini` pruefen und Pfade anpassen
 - Services neustarten: `sudo systemctl restart rpi-slideshow rpi-slideshow-web`
+
+## Update
+
+### Ueber das Admin-Panel
+
+Im Admin-Panel gibt es den Tab **Update**:
+1. **Auf Updates pruefen** klicken - vergleicht lokale mit der GitHub-Version
+2. Falls Update verfuegbar: **Jetzt aktualisieren** klicken
+3. Die Software wird aktualisiert und die Services automatisch neu gestartet
+4. Die Seite laedt sich nach 5 Sekunden automatisch neu
+
+Lokale Einstellungen (config.ini) bleiben bei einem Update erhalten.
+
+### Manuell per SSH
+
+```bash
+cd /home/pi/rpi-picture-show
+git pull
+sudo systemctl restart rpi-slideshow rpi-slideshow-web
+```
 
 ## Versionierung
 
