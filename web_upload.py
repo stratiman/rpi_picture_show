@@ -464,6 +464,11 @@ input:focus {{ border-color:var(--accent); outline:none; }}
       <label for="up_sec">Upload-Anzeigedauer (Sekunden)</label>
       <input type="number" name="uploaded_display_seconds" id="up_sec"
              value="{uploaded_display_seconds}" min="1" max="999" step="1">
+      <label for="ppl">Bilder pro Logo (0 = nur Bilder ohne Logos)</label>
+      <input type="number" name="pictures_per_logo" id="ppl"
+             value="{pictures_per_logo}" min="0" max="99" step="1">
+
+      <div class="section-title">Papierkorb</div>
       <label for="trash_days">Papierkorb leeren nach (Tagen, 0 = nie)</label>
       <input type="number" name="delete_after_days" id="trash_days"
              value="{delete_after_days}" min="0" max="9999" step="1">
@@ -924,6 +929,7 @@ def create_app(config_path: str | None = None) -> Flask:
             logo_display_seconds=current_cfg.getint("timing", "logo_display_seconds", fallback=10),
             pictures_display_seconds=current_cfg.getint("timing", "pictures_display_seconds", fallback=10),
             uploaded_display_seconds=current_cfg.getint("timing", "uploaded_display_seconds", fallback=10),
+            pictures_per_logo=current_cfg.getint("slideshow", "pictures_per_logo", fallback=1),
             delete_after_days=current_cfg.getint("trash", "delete_after_days", fallback=30),
             transition_duration_min_ms=current_cfg.getint("display", "transition_duration_min_ms", fallback=300),
             transition_duration_max_ms=current_cfg.getint("display", "transition_duration_max_ms", fallback=800),
@@ -954,6 +960,12 @@ def create_app(config_path: str | None = None) -> Flask:
                 if not current_cfg.has_section("timing"):
                     current_cfg.add_section("timing")
                 current_cfg.set("timing", key, val)
+        # Pictures per logo
+        ppl = request.form.get("pictures_per_logo", "")
+        if ppl.isdigit():
+            if not current_cfg.has_section("slideshow"):
+                current_cfg.add_section("slideshow")
+            current_cfg.set("slideshow", "pictures_per_logo", ppl)
         trash_days = request.form.get("delete_after_days", "")
         if trash_days.isdigit():
             if not current_cfg.has_section("trash"):

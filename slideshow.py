@@ -474,6 +474,7 @@ class Slideshow:
         # Slideshow
         self.do_shuffle = self.cfg.getboolean("slideshow", "shuffle", fallback=False)
         self.recursive = self.cfg.getboolean("slideshow", "recursive", fallback=True)
+        self.pictures_per_logo = self.cfg.getint("slideshow", "pictures_per_logo", fallback=1)
 
         # Trash
         self.trash_days = self.cfg.getint("trash", "delete_after_days", fallback=30)
@@ -493,7 +494,8 @@ class Slideshow:
         log.info("Logos gefunden: %d  |  Bilder gefunden: %d", len(logos), len(pics))
         if self.do_shuffle:
             random.shuffle(logos)
-            random.shuffle(pics)
+        # Pictures werden immer gemischt fuer abwechslungsreiche Reihenfolge
+        random.shuffle(pics)
         return logos, pics
 
     def get_uploaded_images(self) -> list[str]:
@@ -613,9 +615,11 @@ class Slideshow:
             logo_cycled = False
             pics_cycled = False
 
+            ppl = max(self.pictures_per_logo, 0)
+
             while self.running:
                 # Show logo
-                if logos:
+                if logos and ppl > 0:
                     self.show_image(screen, logos[logo_idx], self.logo_seconds, "Logo")
                     logo_idx += 1
                     if logo_idx >= len(logos):
@@ -625,21 +629,27 @@ class Slideshow:
                 if not self.running:
                     break
 
-                # Picture slot: uploaded images have priority
-                uploaded = self.get_uploaded_images()
-                if uploaded:
-                    # Show uploaded image and move to trash afterwards
-                    upload_path = uploaded[0]
-                    self.show_image(screen, upload_path, self.uploaded_seconds, "Upload")
-                    self.move_to_trash(upload_path)
-                elif pics:
-                    self.show_image(screen, pics[pics_idx], self.pics_seconds, "Bild")
-                    pics_idx += 1
-                    if pics_idx >= len(pics):
-                        pics_idx = 0
-                        pics_cycled = True
+                # Picture slots: show ppl pictures per logo (or unlimited if ppl==0)
+                pic_count = ppl if ppl > 0 else len(pics) if pics else 1
+                for _ in range(pic_count):
+                    if not self.running:
+                        break
+                    # Uploaded images have priority
+                    uploaded = self.get_uploaded_images()
+                    if uploaded:
+                        upload_path = uploaded[0]
+                        self.show_image(screen, upload_path, self.uploaded_seconds, "Upload")
+                        self.move_to_trash(upload_path)
+                    elif pics:
+                        self.show_image(screen, pics[pics_idx], self.pics_seconds, "Bild")
+                        pics_idx += 1
+                        if pics_idx >= len(pics):
+                            pics_idx = 0
+                            pics_cycled = True
+                    if self.check_rescan_trigger():
+                        break
 
-                # Re-scan if triggered by web upload or after full cycle
+                # Re-scan if triggered or after full cycle
                 if self.check_rescan_trigger():
                     break
                 if (logo_cycled or not logos) and (pics_cycled or not pics):
