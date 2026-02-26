@@ -380,6 +380,10 @@ Optionale Git-Push-Argumente werden weitergeleitet:
 
 ## Versionshistorie
 
+### v1.5.0
+- **Papierkorb-Wiederherstellung**: Bilder aus dem Papierkorb direkt nach Logos, Bilder oder Uploaded zurueck kopieren (mit Dropdown-Auswahl)
+- **Einstellungen sofort wirksam**: Geaenderte Timings, Transitions und pictures_per_logo greifen sofort nach dem Speichern (ohne Service-Neustart)
+
 ### v1.4.0
 - **Pictures immer random**: Bilder werden nach jedem Rescan neu gemischt
 - **Bilder pro Logo**: Konfigurierbarer Modus `pictures_per_logo` (1 = Logo-Bild-Logo-Bild, 3 = Logo-Bild-Bild-Bild-Logo, 0 = nur Bilder)
