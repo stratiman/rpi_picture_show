@@ -380,6 +380,12 @@ Optionale Git-Push-Argumente werden weitergeleitet:
 
 ## Versionshistorie
 
+### v1.3.0
+- **Multi-Upload im Admin-Panel**: Mehrere Logos/Bilder gleichzeitig hochladen
+- **Duplikat-Erkennung**: Bereits vorhandene Bilder werden beim Upload uebersprungen (User + Admin)
+- **Upload-Limit konfigurierbar**: `max_upload_mb` in config.ini (Standard: 256 MB statt 16 MB)
+- **Groessenpruefung vor Upload**: Gesamtgroesse wird angezeigt, Upload-Button blockiert bei Ueberschreitung
+
 ### v1.2.0
 - **HTTPS-Unterstuetzung**: Optionale HTTPS-Verschluesselung mit Self-signed Zertifikat (`https = true` in config.ini)
 - **Automatische Zertifikatserzeugung**: SSL-Zertifikat wird beim ersten Start automatisch generiert (10 Jahre gueltig)
