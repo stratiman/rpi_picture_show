@@ -968,6 +968,12 @@ def create_app(config_path: str | None = None) -> Flask:
     @require_admin
     def admin_check_update():
         app_dir = os.path.dirname(os.path.abspath(__file__))
+        # Pruefen ob Git-Repository vorhanden ist
+        if not os.path.isdir(os.path.join(app_dir, ".git")):
+            return Response(
+                json.dumps({"error": "Kein Git-Repository gefunden. Bitte mit 'git clone' installieren (siehe README)."}),
+                mimetype="application/json",
+            )
         try:
             proc = subprocess.run(
                 ["git", "-C", app_dir, "fetch", "origin"],
@@ -1012,6 +1018,12 @@ def create_app(config_path: str | None = None) -> Flask:
     @require_admin
     def admin_do_update():
         app_dir = os.path.dirname(os.path.abspath(__file__))
+        # Pruefen ob Git-Repository vorhanden ist
+        if not os.path.isdir(os.path.join(app_dir, ".git")):
+            return Response(
+                json.dumps({"error": "Kein Git-Repository gefunden. Bitte mit 'git clone' installieren (siehe README)."}),
+                mimetype="application/json",
+            )
         config_path_local = os.path.join(app_dir, "config.ini")
         try:
             # config.ini sichern (lokale Einstellungen erhalten)
