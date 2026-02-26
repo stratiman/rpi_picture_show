@@ -6,14 +6,21 @@ After=multi-user.target
 Type=simple
 User=pi
 Group=pi
+# Auf eigenes VT wechseln und Konsole ausblenden (kmsdrm/Trixie)
+ExecStartPre=-/bin/chvt 2
+ExecStartPre=-/bin/sh -c 'setterm --cursor off --blank force --tty /dev/tty2 2>/dev/null'
 ExecStart=/usr/bin/python3 /home/pi/rpi-picture-show/slideshow.py
+# Bei Beendigung zurueck auf VT1
+ExecStopPost=-/bin/chvt 1
 WorkingDirectory=/home/pi/rpi-picture-show
 Restart=on-failure
 RestartSec=5
+TTYPath=/dev/tty2
+StandardInput=tty-force
 StandardOutput=journal
 StandardError=journal
-# Zugriff auf Framebuffer
-SupplementaryGroups=video input
+# Zugriff auf Framebuffer/DRM
+SupplementaryGroups=video input render
 
 [Install]
 WantedBy=multi-user.target

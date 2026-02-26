@@ -81,8 +81,27 @@ def collect_images(folder: str, recursive: bool = True) -> list[str]:
 # Display helpers
 # ---------------------------------------------------------------------------
 
+def blank_console():
+    """Blank the Linux console so it does not overlay the DRM output."""
+    try:
+        # Hide cursor and blank the active VT
+        os.system("setterm --cursor off --blank force 2>/dev/null")
+        # Unbind fbcon from the framebuffer (frees DRM for SDL)
+        fb_unbind = "/sys/class/vtconsole/vtcon1/bind"
+        if os.path.exists(fb_unbind):
+            try:
+                with open(fb_unbind, "w") as f:
+                    f.write("0")
+                log.info("fbcon von Framebuffer getrennt")
+            except OSError:
+                pass  # No permission or already unbound
+    except Exception as exc:
+        log.debug("Konsole ausblenden fehlgeschlagen: %s", exc)
+
+
 def init_display() -> pygame.Surface:
     """Initialise pygame for framebuffer (no X11) or fallback to windowed."""
+    blank_console()
     os.environ.setdefault("SDL_NOMOUSE", "1")
     # Ensure fbcon uses the correct framebuffer device
     os.environ.setdefault("SDL_FBDEV", "/dev/fb0")
