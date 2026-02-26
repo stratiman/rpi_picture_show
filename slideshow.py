@@ -558,14 +558,15 @@ class Slideshow:
 
     # ------------------------------------------------------------------
 
-    def show_image(self, screen: pygame.Surface, path: str, duration: float):
+    def show_image(self, screen: pygame.Surface, path: str, duration: float, label: str = ""):
         """Load, transition to, and display *path* for *duration* seconds."""
         sw, sh = screen.get_size()
         img = load_and_scale(path, sw, sh)
         if img is None:
             return
 
-        log.info("Zeige: %s (%.1fs)", os.path.basename(path), duration)
+        tag = ("[%s] " % label) if label else ""
+        log.info("%sZeige: %s (%.1fs)", tag, os.path.basename(path), duration)
         if self.use_random_transition:
             fn = random.choice(_RANDOM_POOL)
         else:
@@ -615,7 +616,7 @@ class Slideshow:
             while self.running:
                 # Show logo
                 if logos:
-                    self.show_image(screen, logos[logo_idx], self.logo_seconds)
+                    self.show_image(screen, logos[logo_idx], self.logo_seconds, "Logo")
                     logo_idx += 1
                     if logo_idx >= len(logos):
                         logo_idx = 0
@@ -629,10 +630,10 @@ class Slideshow:
                 if uploaded:
                     # Show uploaded image and move to trash afterwards
                     upload_path = uploaded[0]
-                    self.show_image(screen, upload_path, self.uploaded_seconds)
+                    self.show_image(screen, upload_path, self.uploaded_seconds, "Upload")
                     self.move_to_trash(upload_path)
                 elif pics:
-                    self.show_image(screen, pics[pics_idx], self.pics_seconds)
+                    self.show_image(screen, pics[pics_idx], self.pics_seconds, "Bild")
                     pics_idx += 1
                     if pics_idx >= len(pics):
                         pics_idx = 0

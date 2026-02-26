@@ -245,6 +245,9 @@ password_hash = 8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918
 | `title` | Titel der Upload-Seite |
 | `greeting` | Begruessungstext auf der Upload-Seite |
 | `min_free_space_mb` | Mindest-Freispeicher in MB (Upload wird abgelehnt wenn weniger frei) |
+| `https` | HTTPS aktivieren (`true`/`false`) - Self-signed Zertifikat wird automatisch erzeugt |
+| `ssl_cert` | Pfad zum SSL-Zertifikat (optional, Standard: `ssl/cert.pem`) |
+| `ssl_key` | Pfad zum SSL-Key (optional, Standard: `ssl/key.pem`) |
 
 ### Logging
 
@@ -376,6 +379,11 @@ Optionale Git-Push-Argumente werden weitergeleitet:
 ```
 
 ## Versionshistorie
+
+### v1.2.0
+- **HTTPS-Unterstuetzung**: Optionale HTTPS-Verschluesselung mit Self-signed Zertifikat (`https = true` in config.ini)
+- **Automatische Zertifikatserzeugung**: SSL-Zertifikat wird beim ersten Start automatisch generiert (10 Jahre gueltig)
+- **Log-Labels**: Slideshow-Log zeigt Bildtyp an (`[Logo]`, `[Bild]`, `[Upload]`)
 
 ### v1.1.2
 - **Config aus Git-Tracking entfernt**: `config.ini` wird nicht mehr versioniert - Updates per `git pull` laufen ohne Konflikte

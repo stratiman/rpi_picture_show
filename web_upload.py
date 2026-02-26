@@ -1228,14 +1228,45 @@ def create_app(config_path: str | None = None) -> Flask:
 # Entry point
 # ---------------------------------------------------------------------------
 
+def ensure_ssl_cert(cert_path: str, key_path: str):
+    """Erzeugt self-signed Zertifikat falls nicht vorhanden."""
+    if os.path.isfile(cert_path) and os.path.isfile(key_path):
+        return
+    os.makedirs(os.path.dirname(cert_path), exist_ok=True)
+    log.info("Erzeuge Self-signed SSL-Zertifikat ...")
+    subprocess.run(
+        [
+            "openssl", "req", "-x509", "-newkey", "rsa:2048",
+            "-keyout", key_path, "-out", cert_path,
+            "-days", "3650", "-nodes",
+            "-subj", "/CN=rpi-picture-show",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    log.info("SSL-Zertifikat erzeugt: %s", cert_path)
+
+
 def main():
     config_path = sys.argv[1] if len(sys.argv) > 1 else None
     cfg = load_config(config_path or get_config_path())
-    port = cfg.getint("web", "port", fallback=8080)
+    use_https = cfg.getboolean("web", "https", fallback=False)
+    port = cfg.getint("web", "port", fallback=443 if use_https else 8080)
 
     app = create_app(config_path)
-    log.info("Starte Web-Upload auf Port %d ...", port)
-    app.run(host="0.0.0.0", port=port, debug=False)
+
+    ssl_ctx = None
+    if use_https:
+        ssl_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ssl")
+        cert = cfg.get("web", "ssl_cert", fallback=os.path.join(ssl_dir, "cert.pem"))
+        key = cfg.get("web", "ssl_key", fallback=os.path.join(ssl_dir, "key.pem"))
+        ensure_ssl_cert(cert, key)
+        ssl_ctx = (cert, key)
+        log.info("Starte Web-Upload auf Port %d (HTTPS) ...", port)
+    else:
+        log.info("Starte Web-Upload auf Port %d ...", port)
+
+    app.run(host="0.0.0.0", port=port, debug=False, ssl_context=ssl_ctx)
 
 
 if __name__ == "__main__":
