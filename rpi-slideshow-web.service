@@ -1,0 +1,18 @@
+[Unit]
+Description=RPI Picture Show - Web Upload Interface
+After=network-online.target rpi-slideshow.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+ExecStart=/usr/bin/python3 /home/pi/rpi-picture-show/web_upload.py
+WorkingDirectory=/home/pi/rpi-picture-show
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

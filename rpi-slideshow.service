@@ -1,0 +1,19 @@
+[Unit]
+Description=RPI Picture Show - Fullscreen Slideshow
+After=multi-user.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+ExecStart=/usr/bin/python3 /home/pi/rpi-picture-show/slideshow.py
+WorkingDirectory=/home/pi/rpi-picture-show
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+# Zugriff auf Framebuffer
+SupplementaryGroups=video input
+
+[Install]
+WantedBy=multi-user.target
