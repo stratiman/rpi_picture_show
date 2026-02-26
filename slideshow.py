@@ -122,50 +122,55 @@ def setup_fb_mirror(screen_w: int, screen_h: int):
 
 
 def init_display() -> pygame.Surface:
-    """Initialise pygame display and set up framebuffer mirror if needed."""
+    """Initialise pygame display and set up framebuffer mirror if needed.
+
+    On Pi with Trixie (SDL 2.28+), the fbcon driver is removed and kmsdrm
+    creates a DRM plane that covers /dev/fb0.  We use the 'dummy' driver
+    for off-screen rendering and mirror every frame to /dev/fb0 directly.
+    """
     os.environ.setdefault("SDL_NOMOUSE", "1")
 
-    # Try display drivers in order of preference
-    drivers = ["kmsdrm", "directfb", "svgalib"]
+    # Read framebuffer resolution to use as screen size
+    fb_w, fb_h = 1920, 1080  # safe default
+    try:
+        with open("/sys/class/graphics/fb0/virtual_size") as f:
+            fb_w, fb_h = map(int, f.read().strip().split(","))
+    except OSError:
+        pass
 
-    display_initialized = False
-    for driver in drivers:
-        os.environ["SDL_VIDEODRIVER"] = driver
-        try:
-            pygame.display.init()
-            display_initialized = True
-            log.info("Video-Treiber: %s", driver)
-            break
-        except pygame.error as e:
-            log.debug("Treiber %s fehlgeschlagen: %s", driver, e)
-            continue
-
-    if not display_initialized:
-        # Fallback: let SDL pick (works under X11 / Wayland for development)
-        os.environ.pop("SDL_VIDEODRIVER", None)
+    # Use dummy driver if /dev/fb0 exists (avoids kmsdrm covering the fb)
+    has_fb = os.path.exists("/dev/fb0")
+    if has_fb:
+        os.environ["SDL_VIDEODRIVER"] = "dummy"
         pygame.display.init()
-        log.info("Video-Treiber: SDL default")
+        log.info("Video-Treiber: dummy (Ausgabe ueber /dev/fb0)")
+    else:
+        # No framebuffer: try real display drivers (X11, Wayland, kmsdrm)
+        drivers = ["kmsdrm", "directfb", "svgalib"]
+        display_initialized = False
+        for driver in drivers:
+            os.environ["SDL_VIDEODRIVER"] = driver
+            try:
+                pygame.display.init()
+                display_initialized = True
+                log.info("Video-Treiber: %s", driver)
+                break
+            except pygame.error as e:
+                log.debug("Treiber %s fehlgeschlagen: %s", driver, e)
+                continue
+        if not display_initialized:
+            os.environ.pop("SDL_VIDEODRIVER", None)
+            pygame.display.init()
+            log.info("Video-Treiber: SDL default")
 
-    pygame.mouse.set_visible(False)
     pygame.font.init()
 
-    info = pygame.display.Info()
-    screen_w, screen_h = info.current_w, info.current_h
-    if screen_w <= 0 or screen_h <= 0:
-        screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
-        screen_w, screen_h = screen.get_size()
-    else:
-        screen = pygame.display.set_mode((screen_w, screen_h), pygame.FULLSCREEN)
-    log.info("Aufloesung: %dx%d", screen_w, screen_h)
+    screen = pygame.display.set_mode((fb_w, fb_h))
+    log.info("Aufloesung: %dx%d", fb_w, fb_h)
 
-    # Mirror every pygame.display.flip() to /dev/fb0 (needed on Pi + Trixie
-    # where kmsdrm renders off-screen and the fbcon SDL driver is removed)
-    setup_fb_mirror(screen_w, screen_h)
-
-    # Test: fill screen briefly with white to verify display output
-    screen.fill((255, 255, 255))
-    pygame.display.flip()
-    log.info("Display-Test: weisser Bildschirm angezeigt")
+    # Mirror every pygame.display.flip() to /dev/fb0
+    if has_fb:
+        setup_fb_mirror(fb_w, fb_h)
 
     return screen
 
