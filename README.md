@@ -380,6 +380,9 @@ Optionale Git-Push-Argumente werden weitergeleitet:
 
 ## Versionshistorie
 
+### v1.5.1
+- **Konsolen-Text unterdrueckt**: Framebuffer wird beim Start schwarz gefaerbt, Kernel-Meldungen und Login-Prompt erscheinen nicht mehr ueber der Slideshow
+
 ### v1.5.0
 - **Papierkorb-Wiederherstellung**: Bilder aus dem Papierkorb direkt nach Logos, Bilder oder Uploaded zurueck kopieren (mit Dropdown-Auswahl)
 - **Einstellungen sofort wirksam**: Geaenderte Timings, Transitions und pictures_per_logo greifen sofort nach dem Speichern (ohne Service-Neustart)
