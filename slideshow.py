@@ -83,6 +83,21 @@ def collect_images(folder: str, recursive: bool = True) -> list[str]:
 # Display helpers
 # ---------------------------------------------------------------------------
 
+def clear_framebuffer():
+    """Clear /dev/fb0 to black to remove any leftover console text."""
+    try:
+        with open("/sys/class/graphics/fb0/stride") as f:
+            stride = int(f.read().strip())
+        with open("/sys/class/graphics/fb0/virtual_size") as f:
+            _fb_w, fb_h = map(int, f.read().strip().split(","))
+        fb_size = stride * fb_h
+        with open("/dev/fb0", "wb") as fb:
+            fb.write(b'\x00' * fb_size)
+        log.info("Framebuffer geloescht (Konsolen-Text entfernt)")
+    except Exception as exc:
+        log.debug("Framebuffer loeschen nicht moeglich: %s", exc)
+
+
 def setup_fb_mirror(screen_w: int, screen_h: int):
     """Open /dev/fb0 and monkey-patch pygame.display.flip to mirror frames.
 
@@ -614,6 +629,7 @@ class Slideshow:
         signal.signal(signal.SIGTERM, lambda *_: setattr(self, "running", False))
         signal.signal(signal.SIGINT, lambda *_: setattr(self, "running", False))
 
+        clear_framebuffer()
         screen = init_display()
 
         while self.running:

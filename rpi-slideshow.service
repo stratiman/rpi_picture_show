@@ -1,16 +1,20 @@
 [Unit]
 Description=RPI Picture Show - Fullscreen Slideshow
 After=multi-user.target
+Conflicts=getty@tty1.service
 
 [Service]
 Type=simple
-User=pi
-Group=pi
-# Konsole ausblenden (Cursor + Text verstecken)
-ExecStartPre=-/bin/sh -c 'setterm --cursor off --blank force --tty /dev/tty1 2>/dev/null'
+User=root
+Group=root
+# Konsole komplett bereinigen: Text loeschen, Cursor aus, Kernel-Meldungen unterdruecken
+ExecStartPre=-/bin/sh -c 'echo 0 > /proc/sys/kernel/printk'
+ExecStartPre=-/bin/sh -c 'echo -ne "\033c\033[2J\033[H" > /dev/tty1'
+ExecStartPre=-/bin/sh -c 'setterm --cursor off --blank force --powerdown 0 --tty /dev/tty1'
 ExecStart=/usr/bin/python3 /home/pi/rpi-picture-show/slideshow.py
 # Bei Beendigung: Konsole wiederherstellen
 ExecStopPost=-/bin/sh -c 'setterm --cursor on --blank poke --tty /dev/tty1 2>/dev/null'
+ExecStopPost=-/bin/sh -c 'echo 4 > /proc/sys/kernel/printk'
 WorkingDirectory=/home/pi/rpi-picture-show
 Restart=on-failure
 RestartSec=5
