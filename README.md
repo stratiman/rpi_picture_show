@@ -380,6 +380,9 @@ Optionale Git-Push-Argumente werden weitergeleitet:
 
 ## Versionshistorie
 
+### v1.5.2
+- **Web-Service Auto-Restart**: Web-Server wird bei Crash oder Haenger automatisch neu gestartet (systemd Watchdog)
+
 ### v1.5.1
 - **Konsolen-Text unterdrueckt**: Framebuffer wird beim Start schwarz gefaerbt, Kernel-Meldungen und Login-Prompt erscheinen nicht mehr ueber der Slideshow
 
