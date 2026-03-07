@@ -1390,6 +1390,39 @@ def ensure_ssl_cert(cert_path: str, key_path: str):
     log.info("SSL-Zertifikat erzeugt: %s", cert_path)
 
 
+def sd_notify(msg: bytes):
+    """Send a notification to systemd (READY, WATCHDOG, etc.)."""
+    import socket
+    addr = os.environ.get("NOTIFY_SOCKET")
+    if not addr:
+        return
+    if addr.startswith("@"):
+        addr = "\0" + addr[1:]
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    try:
+        sock.sendto(msg, addr)
+    finally:
+        sock.close()
+
+
+def start_watchdog():
+    """Notify systemd that service is ready and start watchdog pings."""
+    sd_notify(b"READY=1")
+    interval = int(os.environ.get("WATCHDOG_USEC", "0")) // 2
+    if interval <= 0:
+        return
+    interval_sec = interval / 1_000_000
+
+    def _ping():
+        while True:
+            sd_notify(b"WATCHDOG=1")
+            time.sleep(interval_sec)
+
+    t = threading.Thread(target=_ping, daemon=True)
+    t.start()
+    log.info("Watchdog aktiv (Intervall: %.0fs)", interval_sec)
+
+
 def main():
     config_path = sys.argv[1] if len(sys.argv) > 1 else None
     cfg = load_config(config_path or get_config_path())
@@ -1397,6 +1430,7 @@ def main():
     port = cfg.getint("web", "port", fallback=443 if use_https else 8080)
 
     app = create_app(config_path)
+    start_watchdog()
 
     ssl_ctx = None
     if use_https:
