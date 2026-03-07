@@ -81,7 +81,7 @@ else
     echo ""
     echo "[1/6] Installiere Abhaengigkeiten ..."
     sudo apt-get update -qq
-    sudo apt-get install -y python3 python3-pygame python3-flask git
+    sudo apt-get install -y python3 python3-pygame python3-flask python3-qrcode git
 
     # --- 2. Programmverzeichnis einrichten ---
     echo ""

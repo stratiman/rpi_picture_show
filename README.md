@@ -380,6 +380,13 @@ Optionale Git-Push-Argumente werden weitergeleitet:
 
 ## Versionshistorie
 
+### v1.6.0
+- **Upload-Schutz per QR-Code**: Upload nur mit zeitlich begrenztem Key moeglich (aktivierbar im Admin-Panel)
+- **QR-Code auf TV**: Wird bei jedem X-ten Logo eingeblendet (konfigurierbar), enthaelt Upload-Link mit Zugangs-Key
+- **Key-Gueltigkeit**: Einstellbare Gueltigkeitsdauer (Standard: 60 Minuten)
+- **Hinweis-Seite**: Ohne gueltigen Key wird eine Seite mit Hinweis zum QR-Code-Scan angezeigt
+- **Session-basiert**: Nach einmaligem Scan bleibt der Zugang aktiv bis der Key ablaeuft
+
 ### v1.5.2
 - **Web-Service Auto-Restart**: Web-Server wird bei Crash oder Haenger automatisch neu gestartet (systemd Watchdog)
 

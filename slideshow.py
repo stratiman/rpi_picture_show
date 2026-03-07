@@ -7,12 +7,15 @@ Runs without desktop environment using the framebuffer.
 """
 
 import configparser
+import json
 import logging
 import mmap
 import os
 import random
+import secrets
 import shutil
 import signal
+import socket
 import sys
 import time
 
@@ -33,6 +36,7 @@ log = logging.getLogger("slideshow")
 # ---------------------------------------------------------------------------
 SUPPORTED_EXTENSIONS = (".jpg", ".jpeg", ".png", ".bmp", ".gif")
 RESCAN_TRIGGER = "/tmp/rpi-slideshow-rescan"
+UPLOAD_KEY_FILE = "/tmp/rpi-slideshow-upload-key.json"
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -446,6 +450,61 @@ def hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
     return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
 
 # ---------------------------------------------------------------------------
+# QR code helpers
+# ---------------------------------------------------------------------------
+
+def get_local_ip() -> str:
+    """Return the local IP address of this machine."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
+
+
+def generate_upload_key() -> str:
+    """Generate a new random upload key and write it to the key file."""
+    key = secrets.token_urlsafe(32)
+    data = {"key": key, "created": time.time()}
+    try:
+        with open(UPLOAD_KEY_FILE, "w") as f:
+            json.dump(data, f)
+    except OSError as exc:
+        log.warning("Upload-Key konnte nicht geschrieben werden: %s", exc)
+    return key
+
+
+def render_qr_surface(data: str, module_size: int = 4) -> pygame.Surface | None:
+    """Render a QR code as a pygame Surface using the qrcode library."""
+    try:
+        import qrcode
+    except ImportError:
+        log.warning("qrcode-Modul nicht installiert (python3-qrcode)")
+        return None
+
+    qr = qrcode.QRCode(border=2, box_size=1)
+    qr.add_data(data)
+    qr.make(fit=True)
+    matrix = qr.get_matrix()
+    rows = len(matrix)
+    cols = len(matrix[0]) if rows else 0
+    size_w = cols * module_size
+    size_h = rows * module_size
+
+    surface = pygame.Surface((size_w, size_h))
+    surface.fill((255, 255, 255))
+    for y, row in enumerate(matrix):
+        for x, val in enumerate(row):
+            if val:
+                pygame.draw.rect(surface, (0, 0, 0),
+                                 (x * module_size, y * module_size, module_size, module_size))
+    return surface
+
+
+# ---------------------------------------------------------------------------
 # Main loop
 # ---------------------------------------------------------------------------
 
@@ -495,6 +554,12 @@ class Slideshow:
         # Trash
         self.trash_days = self.cfg.getint("trash", "delete_after_days", fallback=30)
 
+        # Upload protection
+        self.upload_protection = self.cfg.getboolean("web", "upload_protection", fallback=False)
+        self.upload_key_valid_minutes = self.cfg.getint("web", "upload_key_valid_minutes", fallback=60)
+        self.qr_code_interval = self.cfg.getint("web", "qr_code_interval", fallback=5)
+        self.logo_show_count = 0
+
         # Transition function
         self.use_random_transition = self.transition_name == "random"
         if self.use_random_transition:
@@ -519,6 +584,9 @@ class Slideshow:
         self.use_random_transition = self.transition_name == "random"
         if not self.use_random_transition:
             self.transition_fn = TRANSITIONS.get(self.transition_name, transition_fade)
+        self.upload_protection = self.cfg.getboolean("web", "upload_protection", fallback=False)
+        self.upload_key_valid_minutes = self.cfg.getint("web", "upload_key_valid_minutes", fallback=60)
+        self.qr_code_interval = self.cfg.getint("web", "qr_code_interval", fallback=5)
         log.info("Einstellungen neu geladen")
 
     # ------------------------------------------------------------------
@@ -595,6 +663,29 @@ class Slideshow:
 
     # ------------------------------------------------------------------
 
+    def show_qr_overlay(self, screen: pygame.Surface):
+        """Generate a new upload key and show QR code overlay on current screen."""
+        cfg = self.cfg
+        port = cfg.getint("web", "port", fallback=80)
+        use_https = cfg.getboolean("web", "https", fallback=False)
+        scheme = "https" if use_https else "http"
+        ip = get_local_ip()
+        key = generate_upload_key()
+        url = f"{scheme}://{ip}" if port in (80, 443) else f"{scheme}://{ip}:{port}"
+        url += f"?key={key}"
+
+        qr_surface = render_qr_surface(url, module_size=5)
+        if qr_surface is None:
+            return
+        sw, sh = screen.get_size()
+        qw, qh = qr_surface.get_size()
+        margin = 20
+        x = sw - qw - margin
+        y = sh - qh - margin
+        screen.blit(qr_surface, (x, y))
+        pygame.display.flip()
+        log.info("[QR] Upload-Key generiert, gueltig %d Min: %s", self.upload_key_valid_minutes, url)
+
     def show_image(self, screen: pygame.Surface, path: str, duration: float, label: str = ""):
         """Load, transition to, and display *path* for *duration* seconds."""
         sw, sh = screen.get_size()
@@ -658,6 +749,11 @@ class Slideshow:
                 # Show logo
                 if logos and ppl > 0:
                     self.show_image(screen, logos[logo_idx], self.logo_seconds, "Logo")
+                    self.logo_show_count += 1
+                    # Show QR code overlay on every N-th logo
+                    if (self.upload_protection and self.qr_code_interval > 0
+                            and self.logo_show_count % self.qr_code_interval == 0):
+                        self.show_qr_overlay(screen)
                     logo_idx += 1
                     if logo_idx >= len(logos):
                         logo_idx = 0

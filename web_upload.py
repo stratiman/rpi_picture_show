@@ -40,6 +40,7 @@ log = logging.getLogger("web_upload")
 SUPPORTED_EXTENSIONS = (".jpg", ".jpeg", ".png", ".bmp", ".gif")
 ALLOWED_FOLDERS = ("logo", "pictures", "trash")
 RESCAN_TRIGGER = "/tmp/rpi-slideshow-rescan"
+UPLOAD_KEY_FILE = "/tmp/rpi-slideshow-upload-key.json"
 
 # ---------------------------------------------------------------------------
 # Configuration helpers
@@ -271,6 +272,60 @@ dz.addEventListener('drop',function(e){{e.preventDefault();this.classList.remove
 </body></html>"""
 
 # ---------------------------------------------------------------------------
+# QR hint page HTML (shown when upload protection is active and no valid key)
+# ---------------------------------------------------------------------------
+
+HTML_QR_HINT = """<!DOCTYPE html>
+<html lang="de" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{title}</title>
+<style>
+:root[data-theme="dark"] {{
+  --bg: #1a1a2e; --fg: #eee; --muted: #aaa; --card: #16213e;
+  --accent: #e94560; --accent-hover: #c73a52; --link-muted: #555;
+}}
+:root[data-theme="light"] {{
+  --bg: #f0f2f5; --fg: #222; --muted: #555; --card: #fff;
+  --accent: #d63851; --accent-hover: #b82e44; --link-muted: #888;
+}}
+* {{ margin:0; padding:0; box-sizing:border-box; }}
+body {{ font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  background:var(--bg); color:var(--fg); min-height:100vh;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; padding:20px; }}
+.container {{ max-width:500px; width:100%; text-align:center; }}
+.theme-toggle {{ position:fixed; top:15px; right:15px; background:var(--card); border:1px solid var(--muted);
+  color:var(--fg); width:40px; height:40px; border-radius:50%; cursor:pointer; font-size:1.2em;
+  display:flex; align-items:center; justify-content:center; z-index:100; }}
+.theme-toggle:hover {{ background:var(--accent); color:#fff; border-color:var(--accent); }}
+.icon {{ font-size:4em; margin-bottom:20px; }}
+h1 {{ font-size:1.5em; margin-bottom:15px; color:var(--accent); }}
+p {{ font-size:1.1em; color:var(--muted); line-height:1.6; margin-bottom:10px; }}
+.version {{ color:var(--link-muted); font-size:0.75em; margin-top:30px; }}
+</style>
+</head>
+<body>
+<button class="theme-toggle" id="themeToggle" title="Theme wechseln"></button>
+<div class="container">
+  <div class="icon">&#x1F4F7;</div>
+  <h1>{title}</h1>
+  <p>Um Bilder hochladen zu koennen, scannen Sie bitte den QR-Code auf dem Bildschirm.</p>
+  <p style="color:var(--fg);font-size:0.95em;">Der QR-Code wird regelmaessig auf dem TV eingeblendet und enthaelt einen zeitlich begrenzten Zugangs-Link.</p>
+  <div class="version">v{version}</div>
+</div>
+<script>
+(function(){{
+  const tb=document.getElementById('themeToggle'),root=document.documentElement;
+  function setTheme(t){{root.setAttribute('data-theme',t);localStorage.setItem('theme',t);
+    tb.textContent=t==='dark'?'\u2600\ufe0f':'\ud83c\udf19';}}
+  setTheme(localStorage.getItem('theme')||'dark');
+  tb.addEventListener('click',function(){{setTheme(root.getAttribute('data-theme')==='dark'?'light':'dark');}});
+}})();
+</script>
+</body></html>"""
+
+# ---------------------------------------------------------------------------
 # Login page HTML
 # ---------------------------------------------------------------------------
 
@@ -487,6 +542,19 @@ input:focus {{ border-color:var(--accent); outline:none; }}
       <input type="number" name="min_free_space_mb" id="min_free"
              value="{min_free_space_mb}" min="0" max="99999" step="10">
       <p style="color:#666;font-size:0.8em;margin-top:4px;">Aktuell frei: {free_space_mb} MB</p>
+
+      <div class="section-title">Upload-Schutz</div>
+      <div class="checkbox-row">
+        <input type="checkbox" name="upload_protection" id="upload_prot"
+               value="true" {upload_protection_checked}>
+        <label for="upload_prot">Upload nur mit QR-Code-Key erlauben</label>
+      </div>
+      <label for="key_valid" style="margin-top:10px;">Key-Gueltigkeit (Minuten)</label>
+      <input type="number" name="upload_key_valid_minutes" id="key_valid"
+             value="{upload_key_valid_minutes}" min="1" max="1440" step="1">
+      <label for="qr_interval">QR-Code bei jedem X-ten Logo anzeigen</label>
+      <input type="number" name="qr_code_interval" id="qr_interval"
+             value="{qr_code_interval}" min="1" max="100" step="1">
 
       <div class="section-title">Uebergangs-Dauer</div>
       <label for="dur_min">Minimale Dauer (ms)</label>
@@ -849,14 +917,43 @@ def create_app(config_path: str | None = None) -> Flask:
             return f(*args, **kwargs)
         return wrapper
 
+    def is_upload_protected() -> bool:
+        return reload_cfg().getboolean("web", "upload_protection", fallback=False)
+
+    def validate_upload_key(key: str) -> bool:
+        """Check if the given upload key is valid (exists and not expired)."""
+        if not key:
+            return False
+        try:
+            with open(UPLOAD_KEY_FILE) as f:
+                data = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return False
+        if data.get("key") != key:
+            return False
+        valid_minutes = reload_cfg().getint("web", "upload_key_valid_minutes", fallback=60)
+        age = time.time() - data.get("created", 0)
+        return age < valid_minutes * 60
+
     # ---------------------------------------------------------------
     # Public routes
     # ---------------------------------------------------------------
 
     @app.route("/")
     def index():
+        key = request.args.get("key", "")
         msg = request.args.get("msg", "")
         msg_type = request.args.get("type", "success")
+
+        # Upload protection: require valid key
+        if is_upload_protected():
+            if not validate_upload_key(key) and not session.get("upload_key"):
+                html = HTML_QR_HINT.format(title=title, version=get_version())
+                return Response(html, mimetype="text/html")
+            # Store valid key in session so user can continue uploading
+            if key and validate_upload_key(key):
+                session["upload_key"] = key
+
         html = HTML_UPLOAD.format(
             title=title, greeting=greeting,
             logo_html=get_logo_html(),
@@ -868,6 +965,10 @@ def create_app(config_path: str | None = None) -> Flask:
 
     @app.route("/upload", methods=["POST"])
     def upload():
+        if is_upload_protected():
+            key = session.get("upload_key", "")
+            if not validate_upload_key(key):
+                return redirect(url_for("index", msg="Upload-Key abgelaufen. Bitte QR-Code erneut scannen.", type="error"))
         files = request.files.getlist("image")
         files = [f for f in files if f.filename]
         if not files:
@@ -968,6 +1069,9 @@ def create_app(config_path: str | None = None) -> Flask:
             transition_duration_random_checked="checked" if dur_random else "",
             min_free_space_mb=current_cfg.getint("web", "min_free_space_mb", fallback=100),
             free_space_mb=get_free_space_mb(base),
+            upload_protection_checked="checked" if current_cfg.getboolean("web", "upload_protection", fallback=False) else "",
+            upload_key_valid_minutes=current_cfg.getint("web", "upload_key_valid_minutes", fallback=60),
+            qr_code_interval=current_cfg.getint("web", "qr_code_interval", fallback=5),
             logos_gallery=build_gallery("logo"),
             pictures_gallery=build_gallery("pictures"),
             trash_gallery=build_gallery("trash"),
@@ -1024,6 +1128,17 @@ def create_app(config_path: str | None = None) -> Flask:
                 current_cfg.set("display", key, val)
         dur_random = "true" if request.form.get("transition_duration_random") else "false"
         current_cfg.set("display", "transition_duration_random", dur_random)
+        # Upload protection
+        if not current_cfg.has_section("web"):
+            current_cfg.add_section("web")
+        upload_prot = "true" if request.form.get("upload_protection") else "false"
+        current_cfg.set("web", "upload_protection", upload_prot)
+        key_valid = request.form.get("upload_key_valid_minutes", "")
+        if key_valid.isdigit():
+            current_cfg.set("web", "upload_key_valid_minutes", key_valid)
+        qr_interval = request.form.get("qr_code_interval", "")
+        if qr_interval.isdigit():
+            current_cfg.set("web", "qr_code_interval", qr_interval)
         save_config(current_cfg, config_file)
         log.info("Einstellungen gespeichert")
         # Rescan triggern damit Slideshow neue Einstellungen uebernimmt
