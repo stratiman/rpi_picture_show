@@ -300,6 +300,8 @@ body {{ font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-seri
   color:var(--fg); width:40px; height:40px; border-radius:50%; cursor:pointer; font-size:1.2em;
   display:flex; align-items:center; justify-content:center; z-index:100; }}
 .theme-toggle:hover {{ background:var(--accent); color:#fff; border-color:var(--accent); }}
+.logo {{ margin:20px auto; max-width:280px; max-height:200px; }}
+.logo img {{ max-width:100%; max-height:200px; object-fit:contain; border-radius:8px; }}
 .icon {{ font-size:4em; margin-bottom:20px; }}
 h1 {{ font-size:1.5em; margin-bottom:15px; color:var(--accent); }}
 p {{ font-size:1.1em; color:var(--muted); line-height:1.6; margin-bottom:10px; }}
@@ -309,7 +311,7 @@ p {{ font-size:1.1em; color:var(--muted); line-height:1.6; margin-bottom:10px; }
 <body>
 <button class="theme-toggle" id="themeToggle" title="Theme wechseln"></button>
 <div class="container">
-  <div class="icon">&#x1F4F7;</div>
+  {logo_html}
   <h1>{title}</h1>
   <p>Um Bilder hochladen zu koennen, scannen Sie bitte den QR-Code auf dem Bildschirm.</p>
   <p style="color:var(--fg);font-size:0.95em;">Der QR-Code wird regelmaessig auf dem TV eingeblendet und enthaelt einen zeitlich begrenzten Zugangs-Link.</p>
@@ -950,7 +952,7 @@ def create_app(config_path: str | None = None) -> Flask:
         # Upload protection: require valid key
         if is_upload_protected():
             if not validate_upload_key(key) and not session.get("upload_key"):
-                html = HTML_QR_HINT.format(title=title, version=get_version())
+                html = HTML_QR_HINT.format(title=title, version=get_version(), logo_html=get_logo_html())
                 return Response(html, mimetype="text/html")
             # Store valid key in session so user can continue uploading
             if key and validate_upload_key(key):
