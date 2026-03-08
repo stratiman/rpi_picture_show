@@ -218,6 +218,7 @@ input[type="file"] {{ display:none; }}
     <button type="submit" class="btn" id="uploadBtn" disabled>Hochladen</button>
   </form>
   <div class="admin-link"><a href="/admin">Admin</a></div>
+  <div style="margin-top:20px;"><a href="/admin" style="color:var(--link-muted);font-size:0.85em;text-decoration:none;">Admin</a></div>
   <div class="version">v{version}</div>
 </div>
 <script>
@@ -312,6 +313,7 @@ p {{ font-size:1.1em; color:var(--muted); line-height:1.6; margin-bottom:10px; }
   <h1>{title}</h1>
   <p>Um Bilder hochladen zu koennen, scannen Sie bitte den QR-Code auf dem Bildschirm.</p>
   <p style="color:var(--fg);font-size:0.95em;">Der QR-Code wird regelmaessig auf dem TV eingeblendet und enthaelt einen zeitlich begrenzten Zugangs-Link.</p>
+  <div style="margin-top:20px;"><a href="/admin" style="color:var(--link-muted);font-size:0.85em;text-decoration:none;">Admin</a></div>
   <div class="version">v{version}</div>
 </div>
 <script>
